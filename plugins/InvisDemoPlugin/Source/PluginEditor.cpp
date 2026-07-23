@@ -33,8 +33,9 @@ void InvisDemoPluginEditor::resized()
     const int headerHeight = juce::roundToInt(getHeight() * 0.12f);
     bounds.removeFromTop(headerHeight); // Proportional header space
 
-    // Dynamically scale module container with window dimensions
-    const int moduleWidth = juce::jlimit(220, 700, static_cast<int>(bounds.getWidth() * 0.6f));
-    const int moduleHeight = juce::jlimit(150, 500, static_cast<int>(bounds.getHeight() * 0.7f));
-    inputFilterUI.setBounds(bounds.removeFromLeft(moduleWidth).withHeight(moduleHeight));
+    // Dynamically scale and center module container with window dimensions
+    const int moduleWidth = juce::jlimit(240, 700, static_cast<int>(bounds.getWidth() * 0.65f));
+    const int moduleHeight = juce::jlimit(160, 500, static_cast<int>(bounds.getHeight() * 0.75f));
+    
+    inputFilterUI.setBounds(bounds.withSizeKeepingCentre(moduleWidth, moduleHeight));
 }

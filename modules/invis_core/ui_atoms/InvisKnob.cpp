@@ -113,22 +113,22 @@ void InvisKnob::paint(juce::Graphics& g)
 
     const juce::String displayText = getEffectiveValueText();
 
-    const float labelHeight = labelText.isNotEmpty() ? std::max(12.0f, bounds.getHeight() * 0.14f) : 0.0f;
-    const float valueHeight = displayText.isNotEmpty() ? std::max(10.0f, bounds.getHeight() * 0.13f) : 0.0f;
+    const float labelHeight = labelText.isNotEmpty() ? std::max(14.0f, bounds.getHeight() * 0.15f) : 0.0f;
+    const float valueHeight = displayText.isNotEmpty() ? std::max(12.0f, bounds.getHeight() * 0.14f) : 0.0f;
 
     const auto knobArea = bounds.withTrimmedTop(labelHeight).withTrimmedBottom(valueHeight);
-    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) - 22.0f;
+    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) * 0.55f; // Reserve space for scale labels
     if (diameter <= 0.0f) return;
 
     const auto center = knobArea.getCentre();
     const float radius = diameter * 0.5f;
-    const float dynamicTrackWidth = std::max(2.0f, diameter * 0.08f);
+    const float dynamicTrackWidth = std::max(2.5f, diameter * 0.08f);
 
     // Draw Top Label
     if (labelText.isNotEmpty())
     {
         g.setColour(theme.textPrimary);
-        g.setFont(juce::FontOptions(std::max(10.0f, labelHeight * 0.8f), juce::Font::bold));
+        g.setFont(juce::FontOptions(std::max(11.0f, labelHeight * 0.75f), juce::Font::bold));
         g.drawText(labelText, bounds.removeFromTop(labelHeight), juce::Justification::centred, true);
     }
 
@@ -176,10 +176,11 @@ void InvisKnob::paint(juce::Graphics& g)
         g.strokePath(valuePath, juce::PathStrokeType(dynamicTrackWidth + 0.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // Draw Scale Ticks & Labels around knob
-    const float tickLength = 4.0f;
-    const float tickRadius = radius + dynamicTrackWidth * 0.5f + 3.0f;
-    const float labelRadius = tickRadius + tickLength + 8.0f;
+    // Draw Scale Ticks & Labels around knob (Proportional Projections)
+    const float tickLength = std::max(2.5f, radius * 0.08f);
+    const float tickRadius = radius + dynamicTrackWidth * 0.5f + std::max(2.0f, radius * 0.05f);
+    const float labelRadius = tickRadius + tickLength + std::max(6.0f, radius * 0.22f);
+    const float tickFontSize = std::clamp(radius * 0.22f, 9.0f, 15.0f);
 
     for (const auto& tick : scaleTicks)
     {
@@ -209,8 +210,11 @@ void InvisKnob::paint(juce::Graphics& g)
                 center.y - std::cos(tickAngle) * labelRadius
             );
 
-            juce::Rectangle<float> labelRect(labelCenter.x - 14.0f, labelCenter.y - 7.0f, 28.0f, 14.0f);
-            g.setFont(juce::FontOptions(std::max(8.0f, diameter * 0.12f), tick.isOff ? juce::Font::bold : juce::Font::plain));
+            const float tickRectWidth = std::max(36.0f, tickFontSize * 3.8f);
+            const float tickRectHeight = std::max(16.0f, tickFontSize * 1.4f);
+
+            juce::Rectangle<float> labelRect(labelCenter.x - tickRectWidth * 0.5f, labelCenter.y - tickRectHeight * 0.5f, tickRectWidth, tickRectHeight);
+            g.setFont(juce::FontOptions(tickFontSize, tick.isOff ? juce::Font::bold : juce::Font::plain));
             g.drawText(tick.label, labelRect, juce::Justification::centred, false);
         }
     }

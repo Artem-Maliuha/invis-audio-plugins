@@ -15,6 +15,7 @@ Every plugin developed in this repository MUST implement the following 4 feature
    - Always call `setResizable(true, true)` in `PluginEditor`.
    - Ensure UI controls, modules, and ALL text labels (titles, values, tick marks) scale proportionally, preserving aspect ratio during resizing.
    - NEVER hardcode static font sizes (`Font(11.0f)`) or static pixel offsets in `paint()` / `resized()`. Compute all font sizes dynamically relative to bounds.
+   - **NEVER hardcode static pixel bounds for text labels** (e.g., `Rectangle(..., 28, 14)`) or static radial offsets. Compute `labelRect` width/height dynamically relative to font size (`fontSize * 3.5f`) and radial distance relative to `radius` to prevent text truncation ("OFF" -> "O") or overlaps.
 2. **Dual Oversampling (Online / Offline)**:
    - Must include oversampling controls with separate **Online** (realtime) and **Offline** (bounce/export) settings.
    - Default setting MUST be **Off (1x)**.
