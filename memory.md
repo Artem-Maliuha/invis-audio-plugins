@@ -26,6 +26,10 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
 4. **Assignable MIDI Learn**:
    - Built-in parameter-level MIDI Learn manager in every plugin for CC mapping.
 
+5. **Volumetric Light & Emissive Surface Interaction Standard**:
+   - Any light-emitting UI element (LED slots, active track arcs, meters, status indicators) MUST NOT look flatly drawn on top of surfaces.
+   - Must implement physically carved slot geometry (interior drop shadow + bevel edges), ambient light reflection propagating onto surrounding materials (e.g. lathe grooves on metal cap), and multi-layer optical depth (Recessed shadow -> Surface glow reflection -> Neon halo -> High-intensity phosphor core).
+
 ---
 
 ## Key Architectural Decisions

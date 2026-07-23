@@ -294,8 +294,8 @@ void InvisKnob::paint(juce::Graphics& g)
             g.setColour(juce::Colours::black.withAlpha(0.4f));
             g.drawEllipse(center.x - capRadius + 1.0f, center.y - capRadius + 1.0f, (capRadius - 1.0f) * 2.0f, (capRadius - 1.0f) * 2.0f, 1.0f);
 
-            // 6. Encapsulated 3D LED Capsule Pointer Slot
-            const float pointerStartR = capRadius * 0.25f;
+            // 6. Encapsulated 3D LED Capsule Pointer Slot (Carved Metal Groove & Emissive Ambient Lighting)
+            const float pointerStartR = capRadius * 0.22f;
             const float pointerEndR   = capRadius * 0.82f;
 
             const juce::Point<float> pStart(
@@ -308,25 +308,44 @@ void InvisKnob::paint(juce::Graphics& g)
                 center.y - std::cos(currentAngle) * pointerEndR
             );
 
-            // Pointer Slot Shadow / Recess
-            g.setColour(juce::Colours::black.withAlpha(0.7f));
-            g.drawLine(juce::Line<float>(pStart, pEnd), std::max(3.0f, dynamicTrackWidth * 0.7f));
+            const float slotWidth = std::max(3.5f, dynamicTrackWidth * 0.7f);
+
+            // A. Carved Metal Slot Outer Highlight Lip (Bottom-Right Bevel Edge)
+            const juce::Point<float> offsetHighlight(0.6f, 0.6f);
+            g.setColour(juce::Colours::white.withAlpha(0.22f));
+            g.drawLine(juce::Line<float>(pStart + offsetHighlight, pEnd + offsetHighlight), slotWidth + 1.2f);
+
+            // B. Carved Interior Slot Deep Shadow Trench
+            g.setColour(juce::Colour::fromRGB(8, 10, 14));
+            g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth);
+
+            // C. Slot Inner Top Shadow Edge (Depth Occlusion)
+            g.setColour(juce::Colours::black.withAlpha(0.85f));
+            g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 0.6f);
 
             if (!isOffState)
             {
-                g.setColour(theme.accentPrimary.withAlpha(0.25f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(5.0f, dynamicTrackWidth * 1.2f));
+                // D. Wide Ambient Glow Field propagating onto surrounding aluminum lathe cap surface
+                g.setColour(theme.accentPrimary.withAlpha(0.12f));
+                g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 3.6f);
 
-                g.setColour(theme.accentPrimary.withAlpha(0.55f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(3.0f, dynamicTrackWidth * 0.75f));
+                // E. Soft Neon Halo Diffusion Band
+                g.setColour(theme.accentPrimary.withAlpha(0.38f));
+                g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 2.1f);
 
-                g.setColour(theme.accentPrimary.brighter(0.4f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(1.5f, dynamicTrackWidth * 0.4f));
+                // F. Intense Capsule Glow Body
+                g.setColour(theme.accentPrimary.brighter(0.2f));
+                g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 0.95f);
+
+                // G. Bright White Phosphor LED Core Thread
+                g.setColour(juce::Colours::white.withAlpha(0.92f));
+                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(1.5f, slotWidth * 0.38f));
             }
             else
             {
-                g.setColour(theme.textSecondary.withAlpha(0.4f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(1.5f, dynamicTrackWidth * 0.4f));
+                // Unlit Dim Capsule Filament in Slot
+                g.setColour(theme.textSecondary.withAlpha(0.25f));
+                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(1.5f, slotWidth * 0.4f));
             }
         }
     }

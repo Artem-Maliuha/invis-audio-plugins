@@ -44,7 +44,14 @@ Every plugin developed in this repository MUST implement the following 4 feature
 - Never hardcode color values (`juce::Colours::red`, `#ff0000`) inside `paint()` methods of UI atoms or modules. Use theme tokens (`theme.accentPrimary`, `theme.background`, etc.).
 - Allow parents (modules, plugins) to override child themes gracefully using `setModuleTheme` / `setThemeOverride`.
 
-### 5. Language & Communication
+### 5. Volumetric Light & Emissive Surface Interaction Standard
+- Any light-emitting element (e.g. LED pointer slots, glowing arcs, active meters, status indicators) MUST NOT be drawn flatly on top of surfaces.
+- Emissive elements MUST implement:
+  1. **Recessed Housing & Physical Slot Geometry**: Carved slot or bevel with interior drop shadows and chamfered bevel edges on parent surfaces.
+  2. **Ambient Light Propagation**: Soft emissive glow fields reflecting off adjacent materials (e.g. metal cap lathe grooves, surrounding faceplate).
+  3. **Realistic Optical Layering**: Recessed channel shadow $\rightarrow$ Surface glow reflection $\rightarrow$ Neon halo $\rightarrow$ High-intensity phosphor core.
+
+### 6. Language & Communication
 - All design documentation, commit messages, and project plans MUST be written in **Ukrainian** as requested by the lead developer.
 - Keep architectural logs up to date in `memory.md`.
 
