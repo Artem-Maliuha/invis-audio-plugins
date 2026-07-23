@@ -7,11 +7,12 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
 
 ## Mandatory Universal Requirements for All Plugins
 
-1. **Fully Resizable UI & Aspect Ratio Preservation**:
+1. **Fully Resizable UI & Proportional Layout Scaling Standard**:
    - Every plugin window MUST be resizable (`setResizable(true, true)`).
    - UI elements, modules, knobs, borders, and ALL text labels (titles, values, tick marks) MUST scale proportionally with component bounds during window resizing.
-   - NEVER use hardcoded font sizes (e.g. `11.0f`) or static pixel offsets in `paint()` or `resized()`. Always compute font sizes dynamically relative to bounds height/width.
-   - **CRITICAL**: NEVER hardcode static pixel bounding boxes for text labels (e.g. `Rectangle(..., 28, 14)`) or static radial offsets (e.g. `radius + 8.0f`). Compute `labelRect` width/height dynamically based on font size (`fontSize * 3.5f`) and radial distance relative to `radius` to prevent text truncation or label overlapping during UI scaling.
+   - **NEVER hardcode static font sizes** (e.g. `11.0f`) or static pixel offsets in `paint()` or `resized()`. Always compute font sizes dynamically relative to bounds height/width.
+   - **NEVER hardcode static pixel bounding boxes for text labels** (e.g. `Rectangle(x, y, 28, 14)`). Bounding box dimensions MUST scale dynamically with active font size (`rectWidth = fontSize * 3.8f`, `rectHeight = fontSize * 1.4f`) to prevent text truncation ("OFF" -> "O") or label overlapping during UI scaling.
+   - Control bodies (e.g. knob dial faces) MUST reserve a fixed percentage of component bounds (e.g. `diameter = minArea * 0.55f`) for surrounding scale ticks, text labels, and headers. Sub-modules MUST scale dynamically and stay centered (`withSizeKeepingCentre()`).
 
 2. **Dual Oversampling Engine (Online vs Offline)**:
    - Every plugin MUST include an oversampling module supporting independent settings for **Online** (realtime playback) and **Offline** (DAW bounce/export).

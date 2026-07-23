@@ -11,11 +11,13 @@ This file specifies rules and best practices for AI coding agents developing in 
 
 ### 1. Mandatory Universal Plugin Requirements
 Every plugin developed in this repository MUST implement the following 4 features:
-1. **Resizable UI & Aspect Ratio Preservation**:
-   - Always call `setResizable(true, true)` in `PluginEditor`.
-   - Ensure UI controls, modules, and ALL text labels (titles, values, tick marks) scale proportionally, preserving aspect ratio during resizing.
-   - NEVER hardcode static font sizes (`Font(11.0f)`) or static pixel offsets in `paint()` / `resized()`. Compute all font sizes dynamically relative to bounds.
-   - **NEVER hardcode static pixel bounds for text labels** (e.g., `Rectangle(..., 28, 14)`) or static radial offsets. Compute `labelRect` width/height dynamically relative to font size (`fontSize * 3.5f`) and radial distance relative to `radius` to prevent text truncation ("OFF" -> "O") or overlaps.
+1. **Resizable UI & Proportional Layout Scaling Standard**:
+   - Always call `setResizable(true, true)` in `PluginEditor` and maintain a fixed aspect ratio (`getConstrainer()->setFixedAspectRatio(...)`).
+   - All visual elements, UI controls, module panels, borders, and ALL text labels (titles, values, tick marks) MUST scale proportionally with component bounds during resizing.
+   - **NEVER hardcode static font sizes** (e.g. `Font(11.0f)`) or static pixel offsets in `paint()` or `resized()`. Compute all font sizes dynamically relative to bounds (e.g. `bounds.getHeight() * ratio` or `radius * ratio`).
+   - **NEVER hardcode static pixel bounds for text labels** (e.g. `Rectangle(x, y, 28, 14)`). Bounding box dimensions MUST scale dynamically with the active font size (e.g. `rectWidth = fontSize * 3.8f`, `rectHeight = fontSize * 1.4f`) to prevent text truncation ("OFF" -> "O") or overlaps.
+   - **Proportional Component & Ring Margins**: Control bodies (e.g. knob dial faces) MUST reserve a fixed percentage of component bounds (e.g. `diameter = minArea * 0.55f`) for surrounding scale ticks, text labels, and headers, ensuring zero overlap between surrounding labels and control titles.
+   - **Centered Responsive Layout**: Sub-modules and container panels MUST scale dynamically with window bounds and stay centered (`withSizeKeepingCentre()`) or fill proportional grid cells without leaving unwanted asymmetric gaps.
 2. **Dual Oversampling (Online / Offline)**:
    - Must include oversampling controls with separate **Online** (realtime) and **Offline** (bounce/export) settings.
    - Default setting MUST be **Off (1x)**.
