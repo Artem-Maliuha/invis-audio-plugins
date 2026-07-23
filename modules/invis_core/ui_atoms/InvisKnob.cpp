@@ -365,6 +365,20 @@ void InvisKnob::mouseDown(const juce::MouseEvent& e)
         onDragStarted();
 }
 
+void InvisKnob::setStickyPositions(const std::vector<float>& positions, float defaultTolerance)
+{
+    stickyPoints.clear();
+    for (float pos : positions)
+    {
+        stickyPoints.push_back({ juce::jlimit(0.0f, 1.0f, pos), defaultTolerance });
+    }
+}
+
+void InvisKnob::addStickyPoint(float normalizedPosition, float tolerance)
+{
+    stickyPoints.push_back({ juce::jlimit(0.0f, 1.0f, normalizedPosition), tolerance });
+}
+
 void InvisKnob::mouseDrag(const juce::MouseEvent& e)
 {
     if (!isDragging) return;
@@ -386,7 +400,27 @@ void InvisKnob::mouseDrag(const juce::MouseEvent& e)
     }
     else
     {
-        setValue(rawDragValue, juce::sendNotification);
+        float targetVal = rawDragValue;
+
+        // Apply soft elastic magnetic pull for sticky points (unless Shift key is held for fine precision bypass)
+        if (!e.mods.isShiftDown() && !stickyPoints.empty())
+        {
+            for (const auto& sp : stickyPoints)
+            {
+                const float dist = std::abs(rawDragValue - sp.normalizedPosition);
+                if (dist < sp.snapTolerance && sp.snapTolerance > 0.0001f)
+                {
+                    // Soft elastic magnetic pull (smooth quadratic easing, no jarring freezes)
+                    const float normalizedDist = dist / sp.snapTolerance; // 0.0 .. 1.0
+                    const float pullFactor = std::pow(normalizedDist, 1.8f);
+                    const float sign = (rawDragValue >= sp.normalizedPosition) ? 1.0f : -1.0f;
+                    targetVal = sp.normalizedPosition + sign * (dist * pullFactor);
+                    break;
+                }
+            }
+        }
+
+        setValue(targetVal, juce::sendNotification);
     }
 }
 

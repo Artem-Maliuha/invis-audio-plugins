@@ -39,6 +39,7 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
   - **`InvisKnob` Core Features**:
     - Procedural 3D metallic geometry: 32 directional knurled grip teeth, CNC lathe concentric micro-grooves, recessed shadow moat, and multi-pass halo LED capsule indicator slot.
     - Full range limits (e.g. 20 Hz to 20 kHz) are 100% active and reachable. `OFF` position operates as a dedicated detent beyond active limits or via explicit state.
+    - Magnetic Sticky Snap Points / Glue detents (`setStickyPositions` / `setStickyPoints`) for easy tactile locking to key scale ticks / center values (with Shift key precision bypass).
     - Optional angle sweep range in degrees: `setAngleRange(float startDegrees, float endDegrees)` (default: 220° to 500°).
     - Scale ticks and labels around the knob passed via `std::vector<ScaleTick>` or `juce::StringArray`.
     - Scale curve mapping support: `Linear`, `Logarithmic`, and `InverseLogarithmic`.

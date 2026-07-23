@@ -32,7 +32,7 @@ Every plugin developed in this repository MUST implement the following 4 feature
 - All UI controls in `modules/invis_core/ui_atoms` (e.g., `InvisKnob`, `InvisSwitch`) **MUST BE STATELESS** relative to plugin parameters or audio engine state.
 - NEVER include `juce::AudioProcessor`, `juce::AudioProcessorValueTreeState`, or `APVTS` header dependencies inside `ui_atoms`.
 - Communicate UI changes via `std::function` callbacks (`onValueChanged`, `onToggle`, etc.).
-- **`InvisKnob` Standard**: Must support optional `OffPosition` (`Start`/`End`) with visual detent gap (preserving full active range limits like 20 kHz), optional angle sweep range in degrees (`setAngleRange`), scale ticks & labels passed via array (`setScaleTicks`), scale curve mapping (`Linear`, `Logarithmic`, `InverseLogarithmic`), double-click reset to `defaultValue`, and inline keyboard text editing when clicking the value label.
+- **`InvisKnob` Standard**: Must support optional `OffPosition` (`Start`/`End`) with visual detent gap (preserving full active range limits like 20 kHz), optional angle sweep range in degrees (`setAngleRange`), optional magnetic sticky snap points (`setStickyPositions` / `setStickyPoints`), scale ticks & labels passed via array (`setScaleTicks`), scale curve mapping (`Linear`, `Logarithmic`, `InverseLogarithmic`), double-click reset to `defaultValue`, and inline keyboard text editing when clicking the value label.
 
 ### 3. Functional Modules (DSP + UI)
 - Modules in `modules/invis_core/functional_modules` combine:

@@ -25,6 +25,11 @@ InputFilterUI::InputFilterUI(juce::AudioProcessorValueTreeState& apvts, const ju
         { static_cast<float>(hiddenHpfSlider.valueToProportionOfLength(1000.0)), "1k" },
         { 1.0f, "2k" }
     });
+    hpfKnob.setStickyPositions({
+        static_cast<float>(hiddenHpfSlider.valueToProportionOfLength(100.0)),
+        static_cast<float>(hiddenHpfSlider.valueToProportionOfLength(350.0)),
+        static_cast<float>(hiddenHpfSlider.valueToProportionOfLength(1000.0))
+    });
 
     lpfKnob.setLabel("LPF");
     lpfKnob.setOffPosition(ui::OffPosition::End);
@@ -34,6 +39,10 @@ InputFilterUI::InputFilterUI(juce::AudioProcessorValueTreeState& apvts, const ju
         { static_cast<float>(hiddenLpfSlider.valueToProportionOfLength(5000.0)), "5k" },
         { static_cast<float>(hiddenLpfSlider.valueToProportionOfLength(12000.0)), "12k" },
         { 1.0f, "OFF", true }
+    });
+    lpfKnob.setStickyPositions({
+        static_cast<float>(hiddenLpfSlider.valueToProportionOfLength(5000.0)),
+        static_cast<float>(hiddenLpfSlider.valueToProportionOfLength(12000.0))
     });
 
     addAndMakeVisible(hpfKnob);

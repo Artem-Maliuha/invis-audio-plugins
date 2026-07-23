@@ -26,6 +26,11 @@ struct ScaleTick {
     bool isOff { false };
 };
 
+struct StickyPoint {
+    float normalizedPosition { 0.5f }; // 0.0f .. 1.0f
+    float snapTolerance { 0.010f };    // Subtle magnetic capture zone
+};
+
 /**
  * Stateless Presentational Vector Knob Atom.
  * Pure visual & interaction control. Zero dependency on AudioProcessor / APVTS.
@@ -38,6 +43,13 @@ public:
     // Value management [0.0f .. 1.0f]
     void setValue(float normalizedValue, juce::NotificationType notification = juce::sendNotificationAsync);
     float getValue() const { return currentValue; }
+
+    // Sticky / Magnetic Snap Points (Glue detents)
+    void setStickyPoints(const std::vector<StickyPoint>& points) { stickyPoints = points; }
+    void setStickyPositions(const std::vector<float>& positions, float defaultTolerance = 0.010f);
+    void addStickyPoint(float normalizedPosition, float tolerance = 0.010f);
+    void clearStickyPoints() { stickyPoints.clear(); }
+    const std::vector<StickyPoint>& getStickyPoints() const { return stickyPoints; }
 
     // OFF state explicit getter / setter
     void setOff(bool shouldBeOff, juce::NotificationType notification = juce::sendNotificationAsync);
@@ -114,6 +126,7 @@ private:
     juce::String valueText;
 
     std::vector<ScaleTick> scaleTicks;
+    std::vector<StickyPoint> stickyPoints;
     std::function<juce::String(float)> valueFormatter;
     std::function<float(const juce::String&)> valueParser;
 
