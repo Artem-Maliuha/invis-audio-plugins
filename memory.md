@@ -27,8 +27,11 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
    - Built-in parameter-level MIDI Learn manager in every plugin for CC mapping.
 
 5. **Volumetric Light & Emissive Surface Interaction Standard**:
-   - Any light-emitting UI element (LED slots, active track arcs, meters, status indicators) MUST NOT look flatly drawn on top of surfaces.
-   - Must implement physically carved slot geometry (interior drop shadow + bevel edges), ambient light reflection propagating onto surrounding materials (e.g. lathe grooves on metal cap), and multi-layer optical depth (Recessed shadow -> Surface glow reflection -> Neon halo -> High-intensity phosphor core).
+   - Any light-emitting UI element (LED slots, active track arcs, meters, status indicators, power LEDs) MUST NOT look flatly drawn on top of surfaces.
+   - All LEDs MUST implement one of two physical hardware mounting structures:
+     1. **Recessed Housing & Slot Geometry (Заглиблений паз)**: Carved slot/channel with interior drop shadows and chamfered bevel edges on parent surfaces.
+     2. **Protruding Dome / Bulb Through Chassis Hole (Виступний кристал крізь отвір)**: Translucent dome/cylinder protruding ABOVE the surface, fitted inside a drilled metal bezel ring/collar, casting a contact drop shadow onto the faceplate and projecting 360-degree volumetric light outward onto surrounding materials.
+   - Must implement multi-layer optical depth (Shadow/bevel housing -> Surface glow reflection -> Translucent body -> Neon halo -> High-intensity phosphor core).
 
 ---
 
