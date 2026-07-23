@@ -124,16 +124,20 @@ void InputFilterUI::paint(juce::Graphics& g)
     g.setColour(theme.knobTrackBg);
     g.drawRoundedRectangle(bounds.reduced(1.0f), theme.cornerRadius, 1.0f);
 
-    // Section title
+    // Section title scaling proportionally with component height
+    const float titleHeight = std::max(16.0f, bounds.getHeight() * 0.14f);
+    const float titleFontSize = std::max(9.0f, titleHeight * 0.65f);
+
     g.setColour(theme.textSecondary);
-    g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    g.drawText("INPUT FILTER", bounds.removeFromTop(20.0f), juce::Justification::centred, true);
+    g.setFont(juce::FontOptions(titleFontSize, juce::Font::bold));
+    g.drawText("INPUT FILTER", bounds.removeFromTop(titleHeight), juce::Justification::centred, true);
 }
 
 void InputFilterUI::resized()
 {
     auto bounds = getLocalBounds().reduced(8);
-    bounds.removeFromTop(18); // title offset
+    const int titleHeight = juce::roundToInt(bounds.getHeight() * 0.14f);
+    bounds.removeFromTop(titleHeight); // Proportional title offset
 
     const int knobWidth = bounds.getWidth() / 2;
     hpfKnob.setBounds(bounds.removeFromLeft(knobWidth).reduced(4));

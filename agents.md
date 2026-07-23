@@ -13,7 +13,8 @@ This file specifies rules and best practices for AI coding agents developing in 
 Every plugin developed in this repository MUST implement the following 4 features:
 1. **Resizable UI & Aspect Ratio Preservation**:
    - Always call `setResizable(true, true)` in `PluginEditor`.
-   - Ensure UI controls, modules, and fonts scale proportionally, preserving aspect ratio during resizing.
+   - Ensure UI controls, modules, and ALL text labels (titles, values, tick marks) scale proportionally, preserving aspect ratio during resizing.
+   - NEVER hardcode static font sizes (`Font(11.0f)`) or static pixel offsets in `paint()` / `resized()`. Compute all font sizes dynamically relative to bounds.
 2. **Dual Oversampling (Online / Offline)**:
    - Must include oversampling controls with separate **Online** (realtime) and **Offline** (bounce/export) settings.
    - Default setting MUST be **Off (1x)**.

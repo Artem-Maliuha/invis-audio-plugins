@@ -18,19 +18,23 @@ void InvisDemoPluginEditor::paint(juce::Graphics& g)
     const auto theme = invis::ui::InvisTheme::getGlobalDefault();
     g.fillAll(theme.background);
 
-    // Header
+    // Header scaling proportionally with editor height
+    const float headerHeight = getLocalBounds().getHeight() * 0.12f;
+    const float headerFontSize = headerHeight * 0.55f;
+
     g.setColour(theme.accentPrimary);
-    g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-    g.drawText("INVIS AUDIO DEMO", getLocalBounds().removeFromTop(40), juce::Justification::centred, true);
+    g.setFont(juce::FontOptions(headerFontSize, juce::Font::bold));
+    g.drawText("INVIS AUDIO DEMO", getLocalBounds().removeFromTop(headerHeight), juce::Justification::centred, true);
 }
 
 void InvisDemoPluginEditor::resized()
 {
-    auto bounds = getLocalBounds().reduced(16);
-    bounds.removeFromTop(36); // Header space
+    auto bounds = getLocalBounds().reduced(juce::roundToInt(getWidth() * 0.035f));
+    const int headerHeight = juce::roundToInt(getHeight() * 0.12f);
+    bounds.removeFromTop(headerHeight); // Proportional header space
 
     // Dynamically scale module container with window dimensions
-    const int moduleWidth = juce::jlimit(220, 600, static_cast<int>(bounds.getWidth() * 0.6f));
-    const int moduleHeight = juce::jlimit(150, 450, static_cast<int>(bounds.getHeight() * 0.65f));
+    const int moduleWidth = juce::jlimit(220, 700, static_cast<int>(bounds.getWidth() * 0.6f));
+    const int moduleHeight = juce::jlimit(150, 500, static_cast<int>(bounds.getHeight() * 0.7f));
     inputFilterUI.setBounds(bounds.removeFromLeft(moduleWidth).withHeight(moduleHeight));
 }

@@ -9,7 +9,8 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
 
 1. **Fully Resizable UI & Aspect Ratio Preservation**:
    - Every plugin window MUST be resizable (`setResizable(true, true)`).
-   - UI elements, modules, knobs, and fonts MUST scale proportionally, preserving aspect ratio during window resizing.
+   - UI elements, modules, knobs, borders, and ALL text labels (titles, values, tick marks) MUST scale proportionally with component bounds during window resizing.
+   - NEVER use hardcoded font sizes (e.g. `11.0f`) or static pixel offsets in `paint()` or `resized()`. Always compute font sizes dynamically relative to bounds height/width.
 
 2. **Dual Oversampling Engine (Online vs Offline)**:
    - Every plugin MUST include an oversampling module supporting independent settings for **Online** (realtime playback) and **Offline** (DAW bounce/export).
