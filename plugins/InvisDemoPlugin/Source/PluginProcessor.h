@@ -36,11 +36,17 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     invis::modules::MidiLearnModule midiLearn;
 
+    std::atomic<float> outputMeterL { 0.0f };
+    std::atomic<float> outputMeterR { 0.0f };
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     invis::modules::InputFilterDSP inputFilterDSP;
     invis::modules::OversamplingDSP oversamplingDSP;
+
+    double currentSampleRate { 44100.0 };
+    double sinePhase { 0.0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InvisDemoPluginProcessor)
 };

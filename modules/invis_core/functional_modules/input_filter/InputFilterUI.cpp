@@ -14,9 +14,11 @@ InputFilterUI::InputFilterUI(juce::AudioProcessorValueTreeState& apvts, const ju
         apvtsRef, paramPrefix + "lpf_freq", hiddenLpfSlider
     );
 
-    // 2. Setup Knob labels, OFF positions, defaults, and scale ticks using APVTS slider range
+    // 2. Setup Knob labels, size presets (S), OFF positions, defaults, arc origins, and scale ticks
+    hpfKnob.setKnobSize(ui::InvisKnobSize::S);
     hpfKnob.setLabel("HPF");
     hpfKnob.setOffPosition(ui::OffPosition::Start);
+    hpfKnob.setValueArcOrigin(ui::ValueArcOrigin::Start);
     hpfKnob.setDefaultValue(0.0f);
     hpfKnob.setScaleTicks({
         { 0.0f, "OFF", true },
@@ -31,8 +33,10 @@ InputFilterUI::InputFilterUI(juce::AudioProcessorValueTreeState& apvts, const ju
         static_cast<float>(hiddenHpfSlider.valueToProportionOfLength(1000.0))
     });
 
+    lpfKnob.setKnobSize(ui::InvisKnobSize::S);
     lpfKnob.setLabel("LPF");
     lpfKnob.setOffPosition(ui::OffPosition::End);
+    lpfKnob.setValueArcOrigin(ui::ValueArcOrigin::End);
     lpfKnob.setDefaultValue(1.0f);
     lpfKnob.setScaleTicks({
         { 0.0f, "1k" },

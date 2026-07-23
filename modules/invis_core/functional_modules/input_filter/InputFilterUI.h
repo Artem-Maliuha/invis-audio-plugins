@@ -18,6 +18,25 @@ public:
     void setModuleTheme(const ui::InvisTheme& theme);
     ui::InvisTheme getEffectiveTheme() const override;
 
+    void setLedPreset(ui::LEDColorPreset preset)
+    {
+        const auto color = ui::getPresetColor(preset);
+        hpfKnob.setPointerLedColor(color);
+        lpfKnob.setPointerLedColor(color);
+    }
+
+    void setKnobCapImage(const juce::Image& image)
+    {
+        hpfKnob.setKnobCapImage(image);
+        lpfKnob.setKnobCapImage(image);
+    }
+
+    void setFilmstrip(const juce::Image& spriteSheetImage, int numFrames, bool isVertical = true)
+    {
+        hpfKnob.setFilmstrip(spriteSheetImage, numFrames, isVertical);
+        lpfKnob.setFilmstrip(spriteSheetImage, numFrames, isVertical);
+    }
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 

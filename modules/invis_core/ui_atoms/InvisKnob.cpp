@@ -91,7 +91,11 @@ void InvisKnob::setOff(bool shouldBeOff, juce::NotificationType notification)
 void InvisKnob::setValue(float normalizedValue, juce::NotificationType notification)
 {
     const float clamped = juce::jlimit(0.0f, 1.0f, normalizedValue);
-    rawDragValue = clamped;
+    if (!isDragging)
+    {
+        rawDragValue = clamped;
+    }
+
     if (isOffState || std::abs(currentValue - clamped) > 0.0001f)
     {
         isOffState = false;
@@ -113,22 +117,69 @@ void InvisKnob::paint(juce::Graphics& g)
 
     const juce::String displayText = getEffectiveValueText();
 
-    const float labelHeight = labelText.isNotEmpty() ? std::max(14.0f, bounds.getHeight() * 0.15f) : 0.0f;
-    const float valueHeight = displayText.isNotEmpty() ? std::max(12.0f, bounds.getHeight() * 0.14f) : 0.0f;
+    // Preset Size Specifications (XS, S, M, L, XL - Default: M)
+    float titleFontSize = 11.5f;
+    float valueFontSize = 12.5f;
+    float fixedLedDotRadius = 4.0f;
+    float fixedTrackWidth = 2.8f;
+    float diameterRatio = 0.58f;
+
+    switch (knobSize)
+    {
+        case InvisKnobSize::XS:
+            titleFontSize = 9.5f;
+            valueFontSize = 10.5f;
+            fixedLedDotRadius = 3.0f;
+            fixedTrackWidth = 2.0f;
+            diameterRatio = 0.52f;
+            break;
+        case InvisKnobSize::S:
+            titleFontSize = 10.0f;
+            valueFontSize = 11.0f;
+            fixedLedDotRadius = 3.4f;
+            fixedTrackWidth = 2.4f;
+            diameterRatio = 0.60f;
+            break;
+        case InvisKnobSize::M:
+        default:
+            titleFontSize = 11.5f;
+            valueFontSize = 12.5f;
+            fixedLedDotRadius = 4.0f;
+            fixedTrackWidth = 2.8f;
+            diameterRatio = 0.68f;
+            break;
+        case InvisKnobSize::L:
+            titleFontSize = 13.5f;
+            valueFontSize = 14.5f;
+            fixedLedDotRadius = 4.8f;
+            fixedTrackWidth = 3.6f;
+            diameterRatio = 0.78f;
+            break;
+        case InvisKnobSize::XL:
+            titleFontSize = 15.5f;
+            valueFontSize = 17.5f;
+            fixedLedDotRadius = 5.8f;
+            fixedTrackWidth = 4.5f;
+            diameterRatio = 0.88f;
+            break;
+    }
+
+    const float labelHeight = labelText.isNotEmpty() ? titleFontSize * 1.35f : 0.0f;
+    const float valueHeight = displayText.isNotEmpty() ? valueFontSize * 1.35f : 0.0f;
 
     const auto knobArea = bounds.withTrimmedTop(labelHeight).withTrimmedBottom(valueHeight);
-    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) * 0.55f; // Reserve space for scale labels
+    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) * diameterRatio;
     if (diameter <= 0.0f) return;
 
     const auto center = knobArea.getCentre();
     const float radius = diameter * 0.5f;
-    const float dynamicTrackWidth = std::max(2.5f, diameter * 0.08f);
+    const float dynamicTrackWidth = fixedTrackWidth;
 
-    // Draw Top Label
+    // Draw Top Title Label with Constant Font Size
     if (labelText.isNotEmpty())
     {
         g.setColour(theme.textPrimary);
-        g.setFont(juce::FontOptions(std::max(11.0f, labelHeight * 0.75f), juce::Font::bold));
+        g.setFont(juce::FontOptions(titleFontSize, juce::Font::bold));
         g.drawText(labelText, bounds.removeFromTop(labelHeight), juce::Justification::centred, true);
     }
 
@@ -167,13 +218,59 @@ void InvisKnob::paint(juce::Graphics& g)
     g.setColour(theme.knobTrackBg);
     g.strokePath(bgPath, juce::PathStrokeType(dynamicTrackWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    // Draw Active value arc
-    if (!isOffState && currentAngle > activeStartAngle)
+    // Calculate Value Arc Origin Angle (Supports customArcOriginPosition)
+    float arcOriginNorm = 0.0f;
+    if (customArcOriginPosition.has_value())
+    {
+        arcOriginNorm = customArcOriginPosition.value();
+    }
+    else if (valueArcOrigin == ValueArcOrigin::Center)
+    {
+        arcOriginNorm = 0.5f;
+    }
+    else if (valueArcOrigin == ValueArcOrigin::End)
+    {
+        arcOriginNorm = 1.0f;
+    }
+
+    const float arcOriginAngle = activeStartAngle + arcOriginNorm * (activeEndAngle - activeStartAngle);
+
+    const juce::Colour activeAccentColor = customPointerColor.value_or(theme.accentPrimary);
+
+    // Update LED ballistics for both value arc and pointer dot
+    pointerLedBallistics.setState(!isOffState);
+    pointerLedBallistics.update(0.016f);
+    const float lum = pointerLedBallistics.getCurrentLuminance();
+
+    // Calculate last active audio angle (ignoring the OFF visual detent gap)
+    const float lastActiveAngle = activeStartAngle + currentValue * (activeEndAngle - activeStartAngle);
+    const float arcTargetAngle  = isOffState ? lastActiveAngle : currentAngle;
+
+    // Draw Emissive Glowing LED Value Arc Track (Inherits LED Ballistics & Volumetric Bloom)
+    if (lum > 0.01f && std::abs(arcTargetAngle - arcOriginAngle) > 0.005f)
     {
         juce::Path valuePath;
-        valuePath.addCentredArc(center.x, center.y, radius, radius, 0.0f, activeStartAngle, currentAngle, true);
-        g.setColour(theme.accentPrimary);
-        g.strokePath(valuePath, juce::PathStrokeType(dynamicTrackWidth + 0.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        const float fromAngle = std::min(arcOriginAngle, arcTargetAngle);
+        const float toAngle   = std::max(arcOriginAngle, arcTargetAngle);
+        valuePath.addCentredArc(center.x, center.y, radius, radius, 0.0f, fromAngle, toAngle, true);
+
+        const float alphaFactor = std::min(1.0f, lum);
+
+        // Pass 1: Soft Volumetric Surface Bloom Field (2.5x track width)
+        g.setColour(activeAccentColor.withMultipliedAlpha(0.24f * alphaFactor));
+        g.strokePath(valuePath, juce::PathStrokeType(dynamicTrackWidth * 2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Pass 2: Intense Neon Diffusion Core (1.6x track width)
+        g.setColour(activeAccentColor.withMultipliedAlpha(0.55f * alphaFactor));
+        g.strokePath(valuePath, juce::PathStrokeType(dynamicTrackWidth * 1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Pass 3: Thin Sleek Translucent Crystal Light Guide Track
+        g.setColour(activeAccentColor.brighter(0.25f).withMultipliedAlpha(alphaFactor));
+        g.strokePath(valuePath, juce::PathStrokeType(dynamicTrackWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Pass 4: High-Intensity White Phosphor Core Thread
+        g.setColour(juce::Colours::white.withAlpha(std::min(1.0f, 0.90f * lum)));
+        g.strokePath(valuePath, juce::PathStrokeType(std::max(0.8f, dynamicTrackWidth * 0.35f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
     // Draw Scale Ticks & Labels around knob (Proportional Projections)
@@ -220,143 +317,210 @@ void InvisKnob::paint(juce::Graphics& g)
     }
 
     // Inner 3D Volumetric Complex Dial Face
-    const float innerRadius = radius - dynamicTrackWidth - 3.0f;
-    if (innerRadius > 10.0f)
+    const float innerRadius = std::max(6.0f, radius - dynamicTrackWidth - 1.5f);
+    if (innerRadius > 4.0f)
     {
-        // 1. Ambient & Contact Drop Shadows
-        g.setColour(juce::Colours::black.withAlpha(0.35f));
-        g.fillEllipse(center.x - innerRadius + 2.0f, center.y - innerRadius + 4.0f, innerRadius * 2.0f, innerRadius * 2.0f);
-        g.setColour(juce::Colours::black.withAlpha(0.55f));
-        g.fillEllipse(center.x - innerRadius + 1.0f, center.y - innerRadius + 2.0f, innerRadius * 2.0f, innerRadius * 2.0f);
-
-        // 2. Outer Flange Skirt Rim (Brushed Metal Base)
-        const auto skirtGradient = juce::ColourGradient(
-            juce::Colour::fromRGB(110, 120, 135), center.x - innerRadius, center.y - innerRadius,
-            juce::Colour::fromRGB(15, 18, 24), center.x + innerRadius, center.y + innerRadius,
-            false
-        );
-        g.setGradientFill(skirtGradient);
-        g.fillEllipse(center.x - innerRadius, center.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f);
-
-        // 3. Knurled Grip Ring (32 Directional Rib Teeth Rotating with Knob)
-        const float knurlOuterR = innerRadius - 1.5f;
-        const float knurlInnerR = knurlOuterR - std::max(3.0f, innerRadius * 0.12f);
-        const int numTeeth = 32;
-
-        for (int i = 0; i < numTeeth; ++i)
+        if (hasFilmstrip())
         {
-            const float toothAngle = currentAngle + static_cast<float>(i) * (juce::MathConstants<float>::twoPi / static_cast<float>(numTeeth));
-            const float lightFactor = std::max(0.18f, (std::sin(toothAngle - 0.785f) + 1.0f) * 0.5f);
+            // 3D Drop Shadow under Filmstrip knob
+            g.setColour(juce::Colours::black.withAlpha(0.65f));
+            g.fillEllipse(center.x - innerRadius + 1.0f, center.y - innerRadius + 3.0f, innerRadius * 2.0f, innerRadius * 2.0f);
 
-            const juce::Point<float> p1(center.x + std::sin(toothAngle) * knurlInnerR, center.y - std::cos(toothAngle) * knurlInnerR);
-            const juce::Point<float> p2(center.x + std::sin(toothAngle) * knurlOuterR, center.y - std::cos(toothAngle) * knurlOuterR);
+            // Compute frame index [0 .. filmstripFrames - 1]
+            const int frameIdx = juce::jlimit(0, filmstripFrames - 1, juce::roundToInt(currentValue * static_cast<float>(filmstripFrames - 1)));
 
-            const auto toothColor = juce::Colour::fromRGB(
-                static_cast<juce::uint8>(20 + lightFactor * 130),
-                static_cast<juce::uint8>(24 + lightFactor * 140),
-                static_cast<juce::uint8>(30 + lightFactor * 155)
+            const int imgW = filmstripImage.getWidth();
+            const int imgH = filmstripImage.getHeight();
+
+            const int frameW = filmstripIsVertical ? imgW : (imgW / filmstripFrames);
+            const int frameH = filmstripIsVertical ? (imgH / filmstripFrames) : imgH;
+
+            const int srcX = filmstripIsVertical ? 0 : (frameIdx * frameW);
+            const int srcY = filmstripIsVertical ? (frameIdx * frameH) : 0;
+
+            const float destDiam = innerRadius * 2.08f;
+            const auto destRect = juce::Rectangle<float>(center.x - destDiam * 0.5f, center.y - destDiam * 0.5f, destDiam, destDiam);
+
+            g.drawImage(filmstripImage,
+                         juce::roundToInt(destRect.getX()), juce::roundToInt(destRect.getY()),
+                         juce::roundToInt(destRect.getWidth()), juce::roundToInt(destRect.getHeight()),
+                         srcX, srcY, frameW, frameH, false);
+
+            // 3D Encapsulated Circular LED Pointer Dot with Phosphor Bloom
+            const float pointerR = innerRadius * 0.65f;
+            const float dotRadius = std::max(3.5f, innerRadius * 0.13f);
+            const juce::Point<float> dotCenter(
+                center.x + std::sin(currentAngle) * pointerR,
+                center.y - std::cos(currentAngle) * pointerR
             );
 
-            g.setColour(toothColor);
-            g.drawLine(juce::Line<float>(p1, p2), 1.8f);
-        }
+            pointerLedBallistics.setState(!isOffState);
+            pointerLedBallistics.update(0.016f);
 
-        // 4. Deep Recessed Shadow Moat
-        const float moatRadius = knurlInnerR - 1.0f;
-        if (moatRadius > 0.0f)
-        {
-            g.setColour(juce::Colour::fromRGB(10, 12, 16));
-            g.fillEllipse(center.x - moatRadius, center.y - moatRadius, moatRadius * 2.0f, moatRadius * 2.0f);
+            const juce::Colour activeLedColor = customPointerColor.value_or(theme.accentPrimary);
+            InvisLED::drawLEDDot(g, dotCenter, dotRadius, activeLedColor, pointerLedBallistics.getCurrentLuminance(), LEDMountType::ProtrudingDome);
         }
-
-        // 5. Center CNC Machined Anisotropic Aluminum Cap
-        const float capRadius = moatRadius - std::max(2.0f, innerRadius * 0.08f);
-        if (capRadius > 0.0f)
+        else if (knobCapImage.isValid())
         {
-            const auto capGradient = juce::ColourGradient(
-                theme.surfacePanel.brighter(0.45f), center.x - capRadius * 0.6f, center.y - capRadius * 0.6f,
-                theme.surfacePanel.darker(0.85f), center.x + capRadius * 0.7f, center.y + capRadius * 0.7f,
+            // 3D Drop Shadow under turned metal knob
+            g.setColour(juce::Colours::black.withAlpha(0.65f));
+            g.fillEllipse(center.x - innerRadius + 1.0f, center.y - innerRadius + 3.0f, innerRadius * 2.0f, innerRadius * 2.0f);
+
+            // Clip drawing region to perfect anti-aliased circle around knob body
+            g.saveState();
+            juce::Path circleClip;
+            circleClip.addEllipse(center.x - innerRadius, center.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f);
+            g.reduceClipRegion(circleClip);
+
+            // Rotate & render 3D titanium knob cap render
+            const float knobDiam = innerRadius * 2.38f; // Scale slightly past clip boundary to ensure 0 black borders!
+            auto transform = juce::AffineTransform::translation(-knobCapImage.getWidth() * 0.5f, -knobCapImage.getHeight() * 0.5f)
+                                 .scaled(knobDiam / knobCapImage.getWidth(), knobDiam / knobCapImage.getHeight())
+                                 .rotated(currentAngle)
+                                 .translated(center.x, center.y);
+
+            g.drawImageTransformed(knobCapImage, transform, true);
+            g.restoreState();
+
+            // 3D Encapsulated Circular LED Pointer Dot with Phosphor Bloom
+            const float pointerR = innerRadius * 0.62f;
+            const float dotRadius = std::max(3.5f, innerRadius * 0.13f);
+            const juce::Point<float> dotCenter(
+                center.x + std::sin(currentAngle) * pointerR,
+                center.y - std::cos(currentAngle) * pointerR
+            );
+
+            pointerLedBallistics.setState(!isOffState);
+            pointerLedBallistics.update(0.016f);
+
+            const juce::Colour activeLedColor = customPointerColor.value_or(theme.accentPrimary);
+            InvisLED::drawLEDDot(g, dotCenter, dotRadius, activeLedColor, pointerLedBallistics.getCurrentLuminance(), LEDMountType::ProtrudingDome);
+        }
+        else
+        {
+            // 1. Physical 3D Elevation Drop Shadows onto chassis faceplate (Casting 8mm height projection down-right)
+            g.setColour(juce::Colours::black.withAlpha(0.40f));
+            g.fillEllipse(center.x - innerRadius + 4.0f, center.y - innerRadius + 7.0f, innerRadius * 2.0f, innerRadius * 2.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.65f));
+            g.fillEllipse(center.x - innerRadius + 2.0f, center.y - innerRadius + 4.5f, innerRadius * 2.0f, innerRadius * 2.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.85f));
+            g.fillEllipse(center.x - innerRadius + 1.0f, center.y - innerRadius + 2.5f, innerRadius * 2.0f, innerRadius * 2.0f);
+
+            // 2. Outer Flange Skirt Rim (Polished Dark Bakelite & Vintage Bronze Base)
+            const auto skirtGradient = juce::ColourGradient(
+                juce::Colour::fromRGB(74, 62, 52), center.x - innerRadius * 0.7f, center.y - innerRadius * 0.7f,
+                juce::Colour::fromRGB(18, 14, 12), center.x + innerRadius * 0.8f, center.y + innerRadius * 0.8f,
                 false
             );
-            g.setGradientFill(capGradient);
-            g.fillEllipse(center.x - capRadius, center.y - capRadius, capRadius * 2.0f, capRadius * 2.0f);
+            g.setGradientFill(skirtGradient);
+            g.fillEllipse(center.x - innerRadius, center.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f);
 
-            // Concentric CNC Lathe Micro-Grooves
-            g.setColour(juce::Colours::white.withAlpha(0.04f));
-            for (float r = capRadius * 0.3f; r < capRadius * 0.9f; r += 2.5f)
+            // 3. 3D Dark Bakelite Knurled Grip Ring (64 Dense Micro-Rib Teeth)
+            const float knurlOuterR = innerRadius - 1.0f;
+            const float knurlInnerR = knurlOuterR - std::max(3.8f, innerRadius * 0.16f);
+            const int numTeeth = 64;
+
+            for (int i = 0; i < numTeeth; ++i)
             {
-                g.drawEllipse(center.x - r, center.y - r, r * 2.0f, r * 2.0f, 0.75f);
+                const float toothAngle = currentAngle + static_cast<float>(i) * (juce::MathConstants<float>::twoPi / static_cast<float>(numTeeth));
+                // Studio Top-Left Light Source (-45 deg) with smooth physical specular curve
+                const float rawLight = (std::cos(toothAngle + 0.785f) + 1.0f) * 0.5f; // 0.0 .. 1.0
+                const float specular = std::pow(rawLight, 1.8f);
+                const float ambient = 0.12f + rawLight * 0.40f + specular * 0.40f;
+
+                const juce::Point<float> p1(center.x + std::sin(toothAngle) * knurlInnerR, center.y - std::cos(toothAngle) * knurlInnerR);
+                const juce::Point<float> p2(center.x + std::sin(toothAngle) * knurlOuterR, center.y - std::cos(toothAngle) * knurlOuterR);
+
+                const juce::uint8 rVal = static_cast<juce::uint8>(juce::jlimit(16.0f, 130.0f, 18.0f + ambient * 110.0f));
+                const juce::uint8 gVal = static_cast<juce::uint8>(juce::jlimit(14.0f, 115.0f, 15.0f + ambient * 98.0f));
+                const juce::uint8 bVal = static_cast<juce::uint8>(juce::jlimit(10.0f, 95.0f, 12.0f + ambient * 80.0f));
+                const auto toothColor = juce::Colour::fromRGB(rVal, gVal, bVal);
+
+                g.setColour(toothColor);
+                g.drawLine(juce::Line<float>(p1, p2), 1.3f);
             }
 
-            // Bevel Top Highlight Chamfer
-            g.setColour(theme.textPrimary.withAlpha(0.2f));
-            g.drawEllipse(center.x - capRadius, center.y - capRadius, capRadius * 2.0f, capRadius * 2.0f, 1.0f);
-            g.setColour(juce::Colours::black.withAlpha(0.4f));
-            g.drawEllipse(center.x - capRadius + 1.0f, center.y - capRadius + 1.0f, (capRadius - 1.0f) * 2.0f, (capRadius - 1.0f) * 2.0f, 1.0f);
-
-            // 6. Encapsulated 3D LED Capsule Pointer Slot (Carved Metal Groove & Emissive Ambient Lighting)
-            const float pointerStartR = capRadius * 0.22f;
-            const float pointerEndR   = capRadius * 0.82f;
-
-            const juce::Point<float> pStart(
-                center.x + std::sin(currentAngle) * pointerStartR,
-                center.y - std::cos(currentAngle) * pointerStartR
-            );
-
-            const juce::Point<float> pEnd(
-                center.x + std::sin(currentAngle) * pointerEndR,
-                center.y - std::cos(currentAngle) * pointerEndR
-            );
-
-            const float slotWidth = std::max(3.5f, dynamicTrackWidth * 0.7f);
-
-            // A. Carved Metal Slot Outer Highlight Lip (Bottom-Right Bevel Edge)
-            const juce::Point<float> offsetHighlight(0.6f, 0.6f);
-            g.setColour(juce::Colours::white.withAlpha(0.22f));
-            g.drawLine(juce::Line<float>(pStart + offsetHighlight, pEnd + offsetHighlight), slotWidth + 1.2f);
-
-            // B. Carved Interior Slot Deep Shadow Trench
-            g.setColour(juce::Colour::fromRGB(8, 10, 14));
-            g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth);
-
-            // C. Slot Inner Top Shadow Edge (Depth Occlusion)
-            g.setColour(juce::Colours::black.withAlpha(0.85f));
-            g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 0.6f);
-
-            if (!isOffState)
+            // 4. Deep Recessed Shadow Moat under Ivory Cap
+            const float moatRadius = knurlInnerR - 1.0f;
+            if (moatRadius > 0.0f)
             {
-                // D. Wide Ambient Glow Field propagating onto surrounding aluminum lathe cap surface
-                g.setColour(theme.accentPrimary.withAlpha(0.12f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 3.6f);
-
-                // E. Soft Neon Halo Diffusion Band
-                g.setColour(theme.accentPrimary.withAlpha(0.38f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 2.1f);
-
-                // F. Intense Capsule Glow Body
-                g.setColour(theme.accentPrimary.brighter(0.2f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), slotWidth * 0.95f);
-
-                // G. Bright White Phosphor LED Core Thread
-                g.setColour(juce::Colours::white.withAlpha(0.92f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(1.5f, slotWidth * 0.38f));
+                g.setColour(juce::Colour::fromRGB(12, 10, 8));
+                g.fillEllipse(center.x - moatRadius, center.y - moatRadius, moatRadius * 2.0f, moatRadius * 2.0f);
             }
-            else
+
+            // 5. Photorealistic Almost Black Carbon-Obsidian Cap with Fine CNC Micro-Texture
+            const float capRadius = moatRadius - std::max(1.0f, innerRadius * 0.04f);
+            if (capRadius > 0.0f)
             {
-                // Unlit Dim Capsule Filament in Slot
-                g.setColour(theme.textSecondary.withAlpha(0.25f));
-                g.drawLine(juce::Line<float>(pStart, pEnd), std::max(1.5f, slotWidth * 0.4f));
+                const float heightShiftY = -1.8f; // Optical 3D Perspective Elevation
+                const juce::Point<float> capCenter(center.x, center.y + heightShiftY);
+
+                // 3D Drop Shadow under Carbon cap
+                g.setColour(juce::Colours::black.withAlpha(0.75f));
+                g.fillEllipse(capCenter.x - capRadius, capCenter.y - capRadius + 2.5f, capRadius * 2.0f, capRadius * 2.0f);
+
+                // Photorealistic Almost Black Anodized Obsidian-Carbon Cap Gradient
+                const auto capGradient = juce::ColourGradient(
+                    juce::Colour::fromRGB(46, 52, 62), capCenter.x - capRadius * 0.65f, capCenter.y - capRadius * 0.65f,
+                    juce::Colour::fromRGB(14, 16, 20), capCenter.x + capRadius * 0.75f, capCenter.y + capRadius * 0.75f,
+                    false
+                );
+                g.setGradientFill(capGradient);
+                g.fillEllipse(capCenter.x - capRadius, capCenter.y - capRadius, capRadius * 2.0f, capRadius * 2.0f);
+
+                // Fine Micro-Engineered CNC Lathe Texture Rings
+                for (float r = capRadius * 0.20f; r < capRadius * 0.94f; r += 2.0f)
+                {
+                    g.setColour(juce::Colours::white.withAlpha(0.06f));
+                    g.drawEllipse(capCenter.x - r, capCenter.y - r, r * 2.0f, r * 2.0f, 0.70f);
+                    g.setColour(juce::Colours::black.withAlpha(0.25f));
+                    g.drawEllipse(capCenter.x - r + 0.4f, capCenter.y - r + 0.4f, r * 2.0f, r * 2.0f, 0.40f);
+                }
+
+                // Polished Vintage Bronze / Gunmetal Bevel Rim Edge
+                g.setColour(juce::Colour::fromRGB(180, 155, 125).withAlpha(0.65f));
+                g.drawEllipse(capCenter.x - capRadius, capCenter.y - capRadius, capRadius * 2.0f, capRadius * 2.0f, 1.25f);
+                g.setColour(juce::Colours::black.withAlpha(0.70f));
+                g.drawEllipse(capCenter.x - capRadius + 0.75f, capCenter.y - capRadius + 0.75f, (capRadius - 0.75f) * 2.0f, (capRadius - 0.75f) * 2.0f, 1.0f);
+
+                // 6. Encapsulated 3D Circular LED Dot Pointer in Recessed Bronze Collar
+                const float pointerR = capRadius * 0.70f;
+                const float dotRadius = fixedLedDotRadius;
+
+                const juce::Point<float> dotCenter(
+                    capCenter.x + std::sin(currentAngle) * pointerR,
+                    capCenter.y - std::cos(currentAngle) * pointerR
+                );
+
+                // Recessed Dark Bronze Collar under LED dot on Black Cap
+                g.setColour(juce::Colour::fromRGB(24, 20, 16).withAlpha(0.85f));
+                g.fillEllipse(dotCenter.x - dotRadius - 1.2f, dotCenter.y - dotRadius - 1.2f, (dotRadius + 1.2f) * 2.0f, (dotRadius + 1.2f) * 2.0f);
+
+                pointerLedBallistics.setState(!isOffState);
+                pointerLedBallistics.update(0.016f);
+
+                const juce::Colour activeLedColor = customPointerColor.value_or(theme.accentPrimary);
+                InvisLED::drawLEDDot(g, dotCenter, dotRadius, activeLedColor, pointerLedBallistics.getCurrentLuminance(), LEDMountType::ProtrudingDome);
             }
         }
     }
 
-    // Store & Draw Value Text at Bottom
+    // Store & Draw Value Text directly below the dial face (Tight Proximity & Accent Color)
     if (displayText.isNotEmpty())
     {
-        valueTextArea = bounds.removeFromBottom(valueHeight);
-        g.setColour(isOffState ? theme.accentSecondary : theme.textSecondary);
-        g.setFont(juce::FontOptions(std::max(9.0f, valueHeight * 0.85f), isOffState ? juce::Font::bold : juce::Font::plain));
+        const float textWidth = std::max(42.0f, valueFontSize * 4.2f);
+        const float textY = center.y + radius + dynamicTrackWidth * 0.5f + 3.0f;
+        valueTextArea = juce::Rectangle<float>(center.x - textWidth * 0.5f, textY, textWidth, valueHeight);
+
+        g.setColour(isOffState ? theme.accentSecondary : activeAccentColor);
+        g.setFont(juce::FontOptions(valueFontSize, isOffState ? juce::Font::bold : juce::Font::plain));
         g.drawText(displayText, valueTextArea, juce::Justification::centred, true);
+    }
+
+    // If LED ballistics is actively decaying, schedule next frame repaint for butter-smooth 60fps animation
+    if (pointerLedBallistics.getCurrentLuminance() > 0.005f && isOffState)
+    {
+        juce::MessageManager::callAsync([this]() { repaint(); });
     }
 }
 
@@ -374,6 +538,74 @@ void InvisKnob::mouseDown(const juce::MouseEvent& e)
     {
         showInlineEditor();
         return;
+    }
+
+    // Check if user clicked directly on any ScaleTick label or mark
+    auto bounds = getLocalBounds().toFloat();
+    const juce::String displayText = getEffectiveValueText();
+    const float labelHeight = labelText.isNotEmpty() ? std::max(14.0f, bounds.getHeight() * 0.15f) : 0.0f;
+    const float valueHeight = displayText.isNotEmpty() ? std::max(12.0f, bounds.getHeight() * 0.14f) : 0.0f;
+    const auto knobArea = bounds.withTrimmedTop(labelHeight).withTrimmedBottom(valueHeight);
+    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) * 0.55f;
+
+    if (diameter > 0.0f)
+    {
+        const auto center = knobArea.getCentre();
+        const float radius = diameter * 0.5f;
+        const float dynamicTrackWidth = std::max(2.5f, diameter * 0.08f);
+
+        const float totalStartAngle = juce::degreesToRadians(startAngleDegrees);
+        const float totalEndAngle   = juce::degreesToRadians(endAngleDegrees);
+        const float gapAngle        = 0.32f;
+
+        float activeStartAngle = totalStartAngle;
+        float activeEndAngle   = totalEndAngle;
+
+        if (offPosition == OffPosition::Start) activeStartAngle = totalStartAngle + gapAngle;
+        else if (offPosition == OffPosition::End) activeEndAngle = totalEndAngle - gapAngle;
+
+        const float tickLength = std::max(2.5f, radius * 0.08f);
+        const float tickRadius = radius + dynamicTrackWidth * 0.5f + std::max(2.0f, radius * 0.05f);
+        const float labelRadius = tickRadius + tickLength + std::max(6.0f, radius * 0.22f);
+        const float tickFontSize = std::clamp(radius * 0.22f, 9.0f, 15.0f);
+        const float tickRectWidth = std::max(36.0f, tickFontSize * 3.8f);
+        const float tickRectHeight = std::max(16.0f, tickFontSize * 1.4f);
+
+        for (const auto& tick : scaleTicks)
+        {
+            float tickAngle = activeStartAngle + tick.normalizedPosition * (activeEndAngle - activeStartAngle);
+            if (offPosition == OffPosition::Start && tick.isOff) tickAngle = totalStartAngle;
+            else if (offPosition == OffPosition::End && tick.isOff) tickAngle = totalEndAngle;
+
+            const juce::Point<float> labelCenter(
+                center.x + std::sin(tickAngle) * labelRadius,
+                center.y - std::cos(tickAngle) * labelRadius
+            );
+
+            const juce::Rectangle<float> labelRect(
+                labelCenter.x - tickRectWidth * 0.5f,
+                labelCenter.y - tickRectHeight * 0.5f,
+                tickRectWidth,
+                tickRectHeight
+            );
+
+            if (labelRect.expanded(4.0f).contains(e.position))
+            {
+                if (onDragStarted != nullptr) onDragStarted();
+
+                if (tick.isOff)
+                {
+                    setOff(true, juce::sendNotification);
+                }
+                else
+                {
+                    setValue(tick.normalizedPosition, juce::sendNotification);
+                }
+
+                if (onDragEnded != nullptr) onDragEnded();
+                return;
+            }
+        }
     }
 
     lastMousePos = e.position;
@@ -405,8 +637,26 @@ void InvisKnob::mouseDrag(const juce::MouseEvent& e)
     const float deltaY = lastMousePos.y - e.position.y;
     lastMousePos = e.position;
 
-    const float sensitivity = e.mods.isShiftDown() ? 0.001f : 0.005f;
-    rawDragValue += deltaY * sensitivity;
+    float stepDelta = deltaY * (e.mods.isShiftDown() ? 0.001f : 0.005f);
+
+    // Tactile Magnetic Friction Engine: dampen drag speed inside magnetic capture zone
+    if (!e.mods.isShiftDown() && !stickyPoints.empty())
+    {
+        for (const auto& sp : stickyPoints)
+        {
+            const float dist = std::abs(rawDragValue - sp.normalizedPosition);
+            const float magnetTolerance = std::max(0.025f, sp.snapTolerance * 2.0f);
+
+            if (dist < magnetTolerance)
+            {
+                // Apply 75% drag resistance inside magnetic detent zone
+                stepDelta *= 0.25f;
+                break;
+            }
+        }
+    }
+
+    rawDragValue += stepDelta;
 
     // Check OFF threshold detent snapping (ultra-light response)
     if (offPosition == OffPosition::Start && rawDragValue <= -0.003f)
@@ -421,19 +671,14 @@ void InvisKnob::mouseDrag(const juce::MouseEvent& e)
     {
         float targetVal = rawDragValue;
 
-        // Apply soft elastic magnetic pull for sticky points (unless Shift key is held for fine precision bypass)
+        // Firm magnetic lock when close to sticky point
         if (!e.mods.isShiftDown() && !stickyPoints.empty())
         {
             for (const auto& sp : stickyPoints)
             {
-                const float dist = std::abs(rawDragValue - sp.normalizedPosition);
-                if (dist < sp.snapTolerance && sp.snapTolerance > 0.0001f)
+                if (std::abs(rawDragValue - sp.normalizedPosition) < 0.020f)
                 {
-                    // Soft elastic magnetic pull (smooth quadratic easing, no jarring freezes)
-                    const float normalizedDist = dist / sp.snapTolerance; // 0.0 .. 1.0
-                    const float pullFactor = std::pow(normalizedDist, 1.8f);
-                    const float sign = (rawDragValue >= sp.normalizedPosition) ? 1.0f : -1.0f;
-                    targetVal = sp.normalizedPosition + sign * (dist * pullFactor);
+                    targetVal = sp.normalizedPosition; // Lock smoothly to sticky point!
                     break;
                 }
             }

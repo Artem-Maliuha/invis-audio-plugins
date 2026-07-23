@@ -1,5 +1,6 @@
 #pragma once
 
+#include "InvisLED.h"
 #include "../design_system/InvisThemeSupplier.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
@@ -18,6 +19,20 @@ enum class KnobScaleCurve {
     Linear,
     Logarithmic,
     InverseLogarithmic
+};
+
+enum class InvisKnobSize {
+    XS, // Extra Small (Compact sub-controls)
+    S,  // Small (Filter / Secondary knobs)
+    M,  // Medium (Standard default control)
+    L,  // Large (Main Gain / Frequency knobs)
+    XL  // Extra Large (Master / Primary focal knob)
+};
+
+enum class ValueArcOrigin {
+    Start,   // Value arc fills from 0.0f (Start angle) clockwise to current value (Gain, Volume, HPF)
+    Center,  // Value arc fills from 0.5f (Center angle) bi-directionally (Pan, EQ Boost/Cut, Balance)
+    End      // Value arc fills from 1.0f (End angle) counter-clockwise down to current value (LPF)
 };
 
 struct ScaleTick {
@@ -59,6 +74,11 @@ public:
     void setScaleCurve(KnobScaleCurve curve) { scaleCurve = curve; repaint(); }
     KnobScaleCurve getScaleCurve() const { return scaleCurve; }
 
+    // Value Arc Origin (Start, Center [Bipolar Pan/EQ], End, or Custom Normalized Position)
+    void setValueArcOrigin(ValueArcOrigin origin) { valueArcOrigin = origin; customArcOriginPosition.reset(); repaint(); }
+    void setValueArcOriginPosition(float normalizedPosition) { customArcOriginPosition = std::clamp(normalizedPosition, 0.0f, 1.0f); repaint(); }
+    ValueArcOrigin getValueArcOrigin() const { return valueArcOrigin; }
+
     // Optional Angle Range in Degrees (Default: 220 to 500 degrees)
     void setAngleRange(float startDegrees, float endDegrees) {
         startAngleDegrees = startDegrees;
@@ -91,6 +111,34 @@ public:
     std::function<void()> onDragStarted;
     std::function<void()> onDragEnded;
 
+    // Pointer LED Color Override
+    void setPointerLedColor(juce::Colour color) { customPointerColor = color; repaint(); }
+    void clearPointerLedColor() { customPointerColor.reset(); repaint(); }
+
+    // Optional 3D Knob Cap Asset
+    void setKnobCapImage(const juce::Image& image) { knobCapImage = image; repaint(); }
+    void clearKnobCapImage() { knobCapImage = juce::Image(); repaint(); }
+
+    // 3D Filmstrip Engine (Pre-rendered 3D Knob Frame Sequence)
+    void setFilmstrip(const juce::Image& spriteSheetImage, int numFrames, bool isVertical = true)
+    {
+        filmstripImage = spriteSheetImage;
+        filmstripFrames = std::max(1, numFrames);
+        filmstripIsVertical = isVertical;
+        repaint();
+    }
+    void clearFilmstrip()
+    {
+        filmstripImage = juce::Image();
+        filmstripFrames = 0;
+        repaint();
+    }
+    bool hasFilmstrip() const { return filmstripImage.isValid() && filmstripFrames > 0; }
+
+    // Knob Size Preset (XS, S, M, L, XL - Default: M)
+    void setKnobSize(InvisKnobSize size) { knobSize = size; repaint(); }
+    InvisKnobSize getKnobSize() const { return knobSize; }
+
     // Theme Overrides
     void setThemeOverride(const InvisTheme& theme) { customTheme = theme; repaint(); }
     void clearThemeOverride() { customTheme.reset(); repaint(); }
@@ -118,6 +166,9 @@ private:
 
     OffPosition offPosition { OffPosition::None };
     KnobScaleCurve scaleCurve { KnobScaleCurve::Linear };
+    InvisKnobSize knobSize { InvisKnobSize::M };
+    ValueArcOrigin valueArcOrigin { ValueArcOrigin::Start };
+    std::optional<float> customArcOriginPosition;
 
     float startAngleDegrees { 220.0f };
     float endAngleDegrees   { 500.0f };
@@ -127,10 +178,17 @@ private:
 
     std::vector<ScaleTick> scaleTicks;
     std::vector<StickyPoint> stickyPoints;
+    LEDBallistics pointerLedBallistics;
     std::function<juce::String(float)> valueFormatter;
     std::function<float(const juce::String&)> valueParser;
 
     std::optional<InvisTheme> customTheme;
+    std::optional<juce::Colour> customPointerColor;
+    juce::Image knobCapImage;
+
+    juce::Image filmstripImage;
+    int filmstripFrames { 0 };
+    bool filmstripIsVertical { true };
 
     juce::Point<float> lastMousePos;
     bool isDragging { false };

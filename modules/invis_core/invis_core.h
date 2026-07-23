@@ -23,7 +23,10 @@
 #include "design_system/InvisThemeSupplier.h"
 
 // UI Atoms
+#include "ui_atoms/InvisCellSelector.h"
 #include "ui_atoms/InvisKnob.h"
+#include "ui_atoms/InvisLED.h"
+#include "ui_atoms/InvisLEDMeter.h"
 
 // Functional Modules
 #include "functional_modules/input_filter/InputFilterDSP.h"

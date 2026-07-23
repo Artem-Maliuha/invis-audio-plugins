@@ -1,7 +1,10 @@
 #include "invis_core.h"
 
 // UI Atoms implementation
+#include "ui_atoms/InvisCellSelector.cpp"
 #include "ui_atoms/InvisKnob.cpp"
+#include "ui_atoms/InvisLED.cpp"
+#include "ui_atoms/InvisLEDMeter.cpp"
 
 // Functional Modules implementation
 #include "functional_modules/input_filter/InputFilterDSP.cpp"

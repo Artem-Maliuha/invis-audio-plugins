@@ -7,12 +7,17 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
 
 ## Mandatory Universal Requirements for All Plugins
 
-1. **Fully Resizable UI & Proportional Layout Scaling Standard**:
-   - Every plugin window MUST be resizable (`setResizable(true, true)`).
-   - UI elements, modules, knobs, borders, and ALL text labels (titles, values, tick marks) MUST scale proportionally with component bounds during window resizing.
-   - **NEVER hardcode static font sizes** (e.g. `11.0f`) or static pixel offsets in `paint()` or `resized()`. Always compute font sizes dynamically relative to bounds height/width.
-   - **NEVER hardcode static pixel bounding boxes for text labels** (e.g. `Rectangle(x, y, 28, 14)`). Bounding box dimensions MUST scale dynamically with active font size (`rectWidth = fontSize * 3.8f`, `rectHeight = fontSize * 1.4f`) to prevent text truncation ("OFF" -> "O") or label overlapping during UI scaling.
-   - Control bodies (e.g. knob dial faces) MUST reserve a fixed percentage of component bounds (e.g. `diameter = minArea * 0.55f`) for surrounding scale ticks, text labels, and headers. Sub-modules MUST scale dynamically and stay centered (`withSizeKeepingCentre()`).
+1. **Resizable UI & Proportional Layout Scaling Standard**:
+   - Always call `setResizable(true, true)` in `PluginEditor` and maintain a fixed aspect ratio (`getConstrainer()->setFixedAspectRatio(...)`).
+   - All visual elements, UI controls, module panels, borders, and ALL text labels (titles, values, tick marks) MUST scale proportionally with component bounds during resizing.
+   - **NEVER hardcode static font sizes** (e.g. `Font(11.0f)`) or static pixel offsets in `paint()` or `resized()`. Compute all font sizes dynamically relative to bounds (e.g. `bounds.getHeight() * ratio` or `radius * ratio`).
+   - **NEVER hardcode static pixel bounds for text labels** (e.g. `Rectangle(x, y, 28, 14)`). Bounding box dimensions MUST scale dynamically with the active font size (e.g. `rectWidth = fontSize * 3.8f`, `rectHeight = fontSize * 1.4f`) to prevent text truncation ("OFF" -> "O") or overlaps.
+   - **Proportional Spacing & Proximity Standard (Стандарт відступів та пропорцій)**:
+     - Header Title Area: $12\%$ of component height (`titleHeight = bounds.getHeight() * 0.12f`, font size $65\%$).
+     - Value Text Field Area: Compact $10\%$ of component height (`valueHeight = std::clamp(bounds.getHeight() * 0.10f, 12.0f, 20.0f)`).
+     - Control Body Diameter: $58\%$ of remaining knob bounds (`diameter = minArea * 0.58f`).
+     - Value Label Proximity: Value text MUST sit directly below the control body with minimal gap ($\le 3\text{px}$) to eliminate dead space and keep controls tightly grouped.
+   - **Centered Responsive Layout**: Sub-modules and container panels MUST scale dynamically with window bounds and stay centered (`withSizeKeepingCentre()`) or fill proportional grid cells without leaving unwanted asymmetric gaps.
 
 2. **Dual Oversampling Engine (Online vs Offline)**:
    - Every plugin MUST include an oversampling module supporting independent settings for **Online** (realtime playback) and **Offline** (DAW bounce/export).
@@ -43,8 +48,9 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
 ### 2. Three-Tier Component Architecture
 - **Tier 1: Primitives & Atoms (`ui_atoms`, `dsp_atoms`)**
   - **Stateless Presentational UI**: Pure UI controls (e.g., `InvisKnob`, `InvisSwitch`, `InvisMeter`) that do not know about JUCE `AudioProcessor`, `APVTS`, or DSP logic. They receive values via setters (`setValue`) and emit user events via C++ lambdas (`std::function<void(float)>`).
+  - **`InvisLED` Atom & `LEDBallistics` Engine**: Dedicated presentational UI atom (`InvisLED.h` / `.cpp`) with physical mounting styles (`LEDMountType::RecessedSlot` vs `LEDMountType::ProtrudingDome`), luminescence attack flash spikes (`attackFlash = 1.35f`), and phosphorescent exponential decay envelopes (~80ms smooth fade out). Integrated into `InvisKnob`.
   - **`InvisKnob` Core Features**:
-    - Procedural 3D metallic geometry: 32 directional knurled grip teeth, CNC lathe concentric micro-grooves, recessed shadow moat, and multi-pass halo LED capsule indicator slot.
+    - Procedural 3D metallic geometry: 32 directional knurled grip teeth, CNC lathe concentric micro-grooves, recessed shadow moat, and integrated `InvisLED` / `LEDBallistics` pointer capsule slot.
     - Full range limits (e.g. 20 Hz to 20 kHz) are 100% active and reachable. `OFF` position operates as a dedicated detent beyond active limits or via explicit state.
     - Magnetic Sticky Snap Points / Glue detents (`setStickyPositions` / `setStickyPoints`) for easy tactile locking to key scale ticks / center values (with Shift key precision bypass).
     - Optional angle sweep range in degrees: `setAngleRange(float startDegrees, float endDegrees)` (default: 220° to 500°).
@@ -107,3 +113,8 @@ invis-audio-plugins/
 - [x] Defined Functional Modules concept combining DSP engine + UI container.
 - [x] Defined Design System cascade hierarchy (`DesignSystem -> UI Atoms -> Modules(1..N) -> Plugin`).
 - [x] Created `memory.md` and `agents.md` for project memory persistence.
+- [x] **3D Hybrid Photorealistic UI Standard**: Photorealistic 3D brushed metal chassis background (`dark_metal_panel.jpg`) combined with high-contrast emissive vector typography and responsive layout bounds.
+- [x] **3D Filmstrip Engine**: Integrated `InvisKnob::setFilmstrip(image, numFrames, isVertical)` supporting 64/100/128-frame pre-rendered 3D sprite sheets with fixed studio specular light physics.
+- [x] **Native Vector 3D Turned Titanium Shader**: High-precision vector lathe shader with 64 dense dark gunmetal micro-knurled teeth ($45^\circ$ studio light source), anisotropic metallic gradients, polished chamfer rim, and `InvisLED` phosphor dot pointer.
+- [x] **InvisKnobSize Preset Standard**: Implemented 5 size presets (`XS`, `S`, `M` default, `L`, `XL`). Within each size preset, font sizes of titles/values, LED dot radius, and track stroke width remain fixed/constant, while component bounds dictate physical dial diameter.
+- [x] **Universal Dual CLIP & DAW Metering Standard**: `InvisLEDMeter` with stationary segment columns, fixed 0 dB gold reference line, independent latching `CLIP L` / `CLIP R` lamps with click-reset physics, and channel mirroring.
