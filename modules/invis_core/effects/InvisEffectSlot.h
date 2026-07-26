@@ -6,7 +6,19 @@
 
 namespace invis::dsp {
 
-enum class AlgorithmKind { Spatial, Modulation, Saturation };
+/**
+ * REVERB AND DELAY ARE NOT ONE ALGORITHM.
+ *
+ * They were, on the reasoning that a delay is a reverb at a long size - which is true of the maths
+ * and false of the instrument. A reverb wants diffusion, damping and a decay you do not count; a
+ * delay wants a time you can set to the bar, two of them for the two sides, a feedback path with
+ * its own colour, and repeats that alternate. Stretching a comb bank until it echoes gives you an
+ * echo you cannot place in time and cannot shape on its way round.
+ *
+ * They stay in one COLOUR family - the ear groups them as space, and the palette follows the ear -
+ * while being two machines underneath.
+ */
+enum class AlgorithmKind { Reverb, Delay, Modulation, Saturation };
 
 /** What an algorithm's knobs are called and what their numbers mean. Display side only. */
 const EffectParam* getAlgorithmParams(AlgorithmKind kind, int& count);
@@ -70,6 +82,12 @@ public:
     void setParam(int index, float normalized);
     float getParam(int index) const;
 
+    /** Which side of the pair this slot is. Ping-pong needs to know; nothing else does. */
+    void setChannel(int c) { channel = c; if (effect != nullptr) effect->setChannel(c); }
+
+    /** Host tempo, for anything that syncs to the bar. */
+    void setTempo(double bpm) { tempo = bpm; if (effect != nullptr) effect->setTempo(bpm); }
+
     void setFilters(float hpfNormalized, float lpfNormalized);
     void setDryWet(float mix) { dryWet = juce::jlimit(0.0f, 1.0f, mix); }
 
@@ -90,8 +108,10 @@ public:
 
 private:
     std::unique_ptr<InvisEffect> effect;
-    AlgorithmKind kind { AlgorithmKind::Spatial };
+    AlgorithmKind kind { AlgorithmKind::Reverb };
     juce::String name;
+    int channel { 0 };
+    double tempo { 0.0 };
 
     modules::InvisFilterCascade hpf, lpf;
     bool hpfActive { false }, lpfActive { false };

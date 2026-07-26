@@ -220,6 +220,151 @@ private:
 
 // =================================================================================================
 
+/** Note divisions a synced time can land on, longest first, with the labels the readout shows. */
+inline constexpr float kNoteFactors[] = {
+    4.0f, 3.0f, 2.0f, 1.5f, 1.0f, 0.75f, 0.6667f, 0.5f, 0.375f, 0.3333f, 0.25f, 0.1667f, 0.125f
+};
+
+inline const char* const kNoteLabels[] = {
+    "1/1", "1/2.", "1/2", "1/4.", "1/4", "1/8.", "1/4T", "1/8", "1/16.", "1/8T", "1/16", "1/16T", "1/32"
+};
+
+inline constexpr int kNumNoteDivisions = static_cast<int>(std::size(kNoteFactors));
+
+/**
+ * DELAY - its own algorithm, not a reverb wound out to a long size.
+ *
+ * They were one machine here and that was a simplification that shows the moment you try to use it.
+ * A reverb wants diffusion, damping and a decay you do not count; a delay wants a time you can set
+ * to the bar, two of them for the two sides, a feedback path with its own colour, and repeats that
+ * alternate. None of those exist in a comb bank, and stretching one until it echoes gives you an
+ * echo you cannot place in time.
+ *
+ * PING-PONG WITHOUT CROSS-FEEDING. The two sides of a star are separate instances processed a block
+ * apart, so feeding one into the other would arrive late by the buffer length - audible, and wrong
+ * in a way that changes with the host's block size. Instead each side knows which one it is and
+ * passes alternate repeats: odd from the left, even from the right. Fed the same signal, that is
+ * what a ping-pong delay sounds like, and it is exact at any block size.
+ */
+class DelayEffect : public InvisEffect {
+public:
+    enum Param { TimeL, TimeR, Sync, Feedback, PingPong, Tone, Character, Wow, NumParams };
+
+    void prepare(double sr, int) override
+    {
+        sampleRate = sr;
+        line.prepare(sr, 4.4f);          // room for the doubled feedback tap at the longest time
+        tone.setCutoff(6000.0f, sr);
+        reset();
+        updateTimes();
+    }
+
+    void reset() override { line.reset(); tone.reset(); wowPhase = 0.0f; }
+    void setChannel(int c) override { side = juce::jlimit(0, 1, c); updateTimes(); }
+    void setTempo(double bpm) override { tempo = bpm > 1.0 ? bpm : 0.0; updateTimes(); }
+
+    juce::Range<int> getParamRange() const override { return { 0, NumParams }; }
+
+    void setParam(int index, float v) override
+    {
+        v = juce::jlimit(0.0f, 1.0f, v);
+
+        switch (index)
+        {
+            case TimeL:     timeLRaw = v; break;
+            case TimeR:     timeRRaw = v; break;
+            case Sync:      synced = v >= 0.5f; break;
+            case Feedback:  feedback = juce::jlimit(0.0f, 0.96f, v * 0.96f); break;
+            case PingPong:  pingPong = v; break;
+
+            // The feedback path's own filter. A delay whose repeats never darken is the one thing
+            // every early digital delay got wrong: each pass has to lose something.
+            case Tone:      tone.setCutoff(juce::jmap(v, 700.0f, 16000.0f), sampleRate); break;
+
+            // DIGITAL -> ANALOGUE -> TAPE as one travel: how much the feedback path softens on
+            // every pass. The catalogue entries are places to stand on it, not separate code.
+            case Character: character = v; break;
+            case Wow:       wow = v; break;
+            default: break;
+        }
+
+        updateTimes();
+    }
+
+    void process(float* x, int n) override
+    {
+        const float wowStep = 0.9f / static_cast<float>(sampleRate);
+        const float wowDepth = wow * static_cast<float>(sampleRate) * 0.0016f;
+
+        for (int s = 0; s < n; ++s)
+        {
+            wowPhase += wowStep;
+            if (wowPhase >= 1.0f) wowPhase -= 1.0f;
+
+            // Two sines an octave and a bit apart: one alone reads as vibrato, and tape does not
+            // wobble in a way you can hum along to.
+            const float flutter = (std::sin(wowPhase * juce::MathConstants<float>::twoPi) * 0.7f
+                                 + std::sin(wowPhase * juce::MathConstants<float>::twoPi * 2.7f) * 0.3f)
+                                * wowDepth;
+
+            const float out = line.read(readSamples + flutter);
+            float fed = tone.process(line.read(feedSamples + flutter));
+
+            if (character > 0.01f)
+                fed = juce::jmap(character, fed, std::tanh(fed * (1.0f + character * 2.2f)) * 0.85f);
+
+            line.write(x[s] + fed * feedback);
+            x[s] = out;
+        }
+    }
+
+private:
+    float secondsFor(float raw) const
+    {
+        if (synced && tempo > 0.0)
+        {
+            const int step = juce::jlimit(0, kNumNoteDivisions - 1,
+                                          static_cast<int>(raw * kNumNoteDivisions * 0.999f));
+
+            return static_cast<float>(60.0 / tempo) * kNoteFactors[step];
+        }
+
+        return 0.010f * std::pow(2000.0f / 10.0f, raw);   // 10 ms .. 2 s
+    }
+
+    void updateTimes()
+    {
+        const float sr = static_cast<float>(sampleRate);
+        const float own = sr * secondsFor(side == 0 ? timeLRaw : timeRRaw);
+        const float base = sr * secondsFor(timeLRaw);
+
+        // PING-PONG IS A GEOMETRY, not a mute. The line recirculates at TWICE the base time, and
+        // the two sides tap it at one and two - so the left hears repeats at T, 3T, 5T and the
+        // right at 2T, 4T, 6T. That IS a ping-pong, and being derived rather than cross-fed it is
+        // exact at any block size, where feeding one side into the other would arrive a buffer
+        // late and change character with the host's settings.
+        const float ppRead = base * (side == 0 ? 1.0f : 2.0f);
+        const float ppFeed = base * 2.0f;
+
+        const float maxSamples = sr * 4.0f;
+
+        readSamples = juce::jlimit(2.0f, maxSamples, juce::jmap(pingPong, own, ppRead));
+        feedSamples = juce::jlimit(2.0f, maxSamples, juce::jmap(pingPong, own, ppFeed));
+    }
+
+    double sampleRate { 44100.0 }, tempo { 0.0 };
+    DelayLine line;
+    OnePole tone;
+
+    float timeLRaw { 0.35f }, timeRRaw { 0.42f };
+    bool synced { false };
+    float feedback { 0.4f }, pingPong { 0.0f }, character { 0.0f }, wow { 0.0f };
+    float readSamples { 11025.0f }, feedSamples { 11025.0f }, wowPhase { 0.0f };
+    int side { 0 };
+};
+
+// =================================================================================================
+
 /**
  * MODULATION - chorus, flanger and vibrato from one modulated delay.
  *

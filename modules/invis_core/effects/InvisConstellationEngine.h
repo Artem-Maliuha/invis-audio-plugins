@@ -53,6 +53,9 @@ public:
     void setPlan(const RoutingPlan& plan);
 
     /** Message thread. Allocates. */
+    /** Host tempo, so a synced delay lands on the bar. Audio thread; cheap when unchanged. */
+    void setTempo(double bpm);
+
     void setStarAlgorithm(int star, const juce::String& effectName);
     void setStarBlock(int star, float hpf, float lpf, float dryWet);
     void setStarParam(int star, int paramIndex, float normalized);
@@ -82,6 +85,7 @@ private:
     double sampleRate { 44100.0 };
     int maxBlock { 512 };
     std::atomic<bool> ready { false };
+    double lastTempo { -1.0 };
 };
 
 } // namespace invis::dsp

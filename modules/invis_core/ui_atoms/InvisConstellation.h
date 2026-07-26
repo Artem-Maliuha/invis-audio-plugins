@@ -117,8 +117,9 @@ struct ConstellationNode {
      * not enough to keep them: compare slots and the host's save both copy the chart's state tree,
      * so anything living only in the DSP survived exactly until you pressed B.
      */
-    static constexpr int kMaxStarParams = 6;
-    std::array<float, kMaxStarParams> effectParams { { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f } };
+    static constexpr int kMaxStarParams = 8;
+    std::array<float, kMaxStarParams> effectParams {
+        { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f } };
 
     float hpf { 0.0f };        // 0 = off
     float lpf { 1.0f };        // 1 = off

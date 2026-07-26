@@ -1953,7 +1953,10 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
         // have a hull that spans their outermost pair across sky nobody joined, and it was
         // flooding that wedge as though it were part of the instrument.
         shape = clusterRegion(nodes, links, cl.stars);
-        shape.applyTransform(juce::AffineTransform::scale(area.getWidth(), area.getHeight())
+        // BOTH AXES BY WIDTH, exactly as toPixels does. Scaling y by the height was correct while
+        // the chart was square and became a stretched, offset blob the moment it was not - the
+        // wash and the stars were being placed by two different maps.
+        shape.applyTransform(juce::AffineTransform::scale(area.getWidth(), area.getWidth())
                                  .translated(area.getX(), area.getY()));
         started = !shape.isEmpty();
 

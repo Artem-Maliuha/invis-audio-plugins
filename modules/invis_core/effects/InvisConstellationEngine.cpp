@@ -11,6 +11,10 @@ void InvisConstellationEngine::prepare(const juce::dsp::ProcessSpec& spec)
         for (int i = 0; i < kMaxStars; ++i)
         {
             if (slots[s][i] == nullptr) slots[s][i] = std::make_unique<InvisEffectSlot>();
+
+            // Which side it is, told once. Only a ping-pong delay cares, and it cares absolutely:
+            // the alternation IS the effect, so an instance that does not know is not one.
+            slots[s][i]->setChannel(s);
             slots[s][i]->prepare(sampleRate, maxBlock);
         }
 
@@ -34,6 +38,16 @@ void InvisConstellationEngine::setPlan(const RoutingPlan& plan)
 
     plans[spare] = plan;
     livePlan.store(spare, std::memory_order_release);
+}
+
+void InvisConstellationEngine::setTempo(double bpm)
+{
+    if (std::abs(bpm - lastTempo) < 0.01) return;
+    lastTempo = bpm;
+
+    for (int s = 0; s < 2; ++s)
+        for (int i = 0; i < kMaxStars; ++i)
+            if (slots[s][i] != nullptr) slots[s][i]->setTempo(bpm);
 }
 
 void InvisConstellationEngine::setStarAlgorithm(int star, const juce::String& effectName)
@@ -81,7 +95,7 @@ float InvisConstellationEngine::getStarParam(int star, int paramIndex) const
 
 AlgorithmKind InvisConstellationEngine::getStarKind(int star) const
 {
-    if (star < 0 || star >= kMaxStars || slots[0][star] == nullptr) return AlgorithmKind::Spatial;
+    if (star < 0 || star >= kMaxStars || slots[0][star] == nullptr) return AlgorithmKind::Reverb;
     return slots[0][star]->getKind();
 }
 

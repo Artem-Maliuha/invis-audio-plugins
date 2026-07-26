@@ -59,6 +59,12 @@ void ConstellationRoyalProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());
 
+    // Tempo, so a synced delay lands on the bar. Read every block because a host can change it
+    // mid-transport, and the engine ignores it when it has not moved.
+    if (auto* head = getPlayHead())
+        if (const auto pos = head->getPosition())
+            if (const auto bpm = pos->getBpm()) engine.setTempo(*bpm);
+
     chassis.process(buffer, apvts, isNonRealtime(), [this](juce::AudioBuffer<float>& b)
     {
         engine.process(b);

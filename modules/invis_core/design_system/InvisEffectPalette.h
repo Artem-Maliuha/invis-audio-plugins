@@ -119,14 +119,19 @@ struct EffectType {
 inline const std::vector<EffectType>& getEffectCatalogue()
 {
     static const std::vector<EffectType> catalogue {
-        // SPATIAL - the room. Deeper and less saturated as the space gets larger, because a big
-        // space is heard as further away and cool colours recede.
-        { "HALL",    EffectFamily::Spatial,     5.0f, 0.78f, 0.92f },
-        { "CHAMBER", EffectFamily::Spatial,    -2.0f, 0.86f, 0.98f },
-        { "PLATE",   EffectFamily::Spatial,   -10.0f, 0.92f, 1.00f },
-        { "SPRING",  EffectFamily::Spatial,    12.0f, 0.70f, 0.88f },
-        { "DELAY",   EffectFamily::Spatial,    -8.0f, 0.95f, 0.96f },
-        { "ECHO",    EffectFamily::Spatial,     9.0f, 0.82f, 0.90f },
+        // SPATIAL - the room. Reverbs and delays are two machines (see AlgorithmKind) and ONE
+        // colour: the ear groups them as space, and the palette follows the ear rather than the
+        // code. Deeper and less saturated as the space gets larger, because a big space is heard
+        // as further away and cool colours recede.
+        { "HALL",     EffectFamily::Spatial,   5.0f, 0.78f, 0.92f },
+        { "CHAMBER",  EffectFamily::Spatial,  -2.0f, 0.86f, 0.98f },
+        { "PLATE",    EffectFamily::Spatial, -10.0f, 0.92f, 1.00f },
+        { "SPRING",   EffectFamily::Spatial,  12.0f, 0.70f, 0.88f },
+
+        { "DIGITAL",  EffectFamily::Spatial, -12.0f, 0.98f, 1.00f },
+        { "ANALOG",   EffectFamily::Spatial,  -4.0f, 0.88f, 0.94f },
+        { "TAPE",     EffectFamily::Spatial,   8.0f, 0.74f, 0.88f },
+        { "PINGPONG", EffectFamily::Spatial,  -8.0f, 0.94f, 0.97f },
 
         // MODULATION - movement. Brighter as the motion gets faster and shallower.
         { "CHORUS",  EffectFamily::Modulation,  6.0f, 0.80f, 0.94f },
@@ -136,10 +141,10 @@ inline const std::vector<EffectType>& getEffectCatalogue()
 
         // SATURATION - heat. Redder and darker as it gets more destructive, which is the same way
         // a real overload behaves: amber first, then red.
-        { "TAPE",    EffectFamily::Saturation, 10.0f, 0.86f, 1.00f },
-        { "TUBE",    EffectFamily::Saturation,  2.0f, 0.92f, 0.96f },
-        { "DRIVE",   EffectFamily::Saturation, -7.0f, 0.96f, 0.92f },
-        { "CRUSH",   EffectFamily::Saturation,-13.0f, 1.00f, 0.84f },
+        { "TAPE SAT", EffectFamily::Saturation, 10.0f, 0.86f, 1.00f },
+        { "TUBE",     EffectFamily::Saturation,  2.0f, 0.92f, 0.96f },
+        { "DRIVE",    EffectFamily::Saturation, -7.0f, 0.96f, 0.92f },
+        { "CRUSH",    EffectFamily::Saturation,-13.0f, 1.00f, 0.84f },
     };
 
     return catalogue;

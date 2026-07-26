@@ -389,9 +389,22 @@ void ConstellationWorkspace::EffectPanel::showFor(int starIndex)
 
             // The descriptor owns the units, so the readout is right for a new algorithm the day it
             // is written rather than the day somebody remembers to format it.
-            k.setValueFormatter([d](float v) {
-                return juce::String(d.toPlain(v), d.decimals) + d.suffix;
-            });
+            // The DESCRIPTOR formats it, so a stepped control reads "SYNC" and not "0.7". A knob
+            // that shows a number for a switch is a knob claiming a precision it does not have.
+            k.setValueFormatter([d](float v) { return d.getText(v); });
+
+            if (d.steps > 1)
+            {
+                std::vector<float> detents;
+                for (int st = 0; st < d.steps; ++st)
+                    detents.push_back((static_cast<float>(st) + 0.5f) / static_cast<float>(d.steps));
+
+                k.setStickyPositions(detents);
+            }
+            else
+            {
+                k.setStickyPositions({});
+            }
 
             k.setValue(owner.constellation.getNode(index).effectParams[static_cast<size_t>(i)],
                        juce::dontSendNotification);

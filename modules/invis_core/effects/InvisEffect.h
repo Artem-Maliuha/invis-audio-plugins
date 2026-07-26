@@ -7,7 +7,7 @@
 namespace invis::dsp {
 
 /** How many knobs an algorithm may expose. Fixed so a slot never allocates to hold them. */
-inline constexpr int kMaxEffectParams = 6;
+inline constexpr int kMaxEffectParams = 8;
 
 /**
  * One knob an algorithm offers.
@@ -25,6 +25,32 @@ struct EffectParam {
     const char* suffix { "" };
     int decimals { 0 };
     bool skewed { false };      // true for time and frequency, where the ear is logarithmic
+
+    /**
+     * A STEPPED control - a switch, not a dial.
+     *
+     * Some choices are not quantities. "Milliseconds or note values" and "digital, analogue or
+     * tape" have no meaningful in-between, and a continuous knob that lands between two of them is
+     * a knob that lies about what it does. `labels` names each step so the readout says the thing
+     * rather than a number standing in for it.
+     */
+    int steps { 0 };                          // 0 = continuous
+    const char* const* labels { nullptr };
+
+    int toStep(float normalized) const
+    {
+        if (steps <= 1) return 0;
+        return juce::jlimit(0, steps - 1,
+                            static_cast<int>(juce::jlimit(0.0f, 1.0f, normalized)
+                                             * static_cast<float>(steps) * 0.999f));
+    }
+
+    juce::String getText(float normalized) const
+    {
+        if (steps > 1 && labels != nullptr) return labels[toStep(normalized)];
+
+        return juce::String(toPlain(normalized), decimals) + suffix;
+    }
 
     float toPlain(float normalized) const
     {
@@ -84,6 +110,19 @@ public:
      * lamp: the same setting bites on a loud passage and barely touches a quiet one.
      */
     virtual float getActivity() const { return -1.0f; }
+
+    /**
+     * Which side of the pair this instance is, 0 or 1.
+     *
+     * A star is instantiated per stream, and for most algorithms the two are simply independent.
+     * A ping-pong delay is the exception: alternating repeats between the sides is the effect, so
+     * an instance has to know which side it is. It cannot be done by cross-feeding the two, because
+     * they are processed a block apart - the cross path would arrive late by the buffer length.
+     */
+    virtual void setChannel(int) {}
+
+    /** Host tempo, for anything that syncs. Zero when the host does not report one. */
+    virtual void setTempo(double) {}
 };
 
 /** What an algorithm exposes, looked up by name so the catalogue and the DSP cannot drift apart. */

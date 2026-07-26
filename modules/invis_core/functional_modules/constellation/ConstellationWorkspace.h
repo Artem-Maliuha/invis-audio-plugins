@@ -29,7 +29,9 @@ public:
     static constexpr int kPanelHeadingHeight = 12;
 
     static constexpr int kWidth  = 780;
-    static constexpr int kHeight = 560;
+    // TALLER, because eight controls at one size up do not fit in the height that held five at
+    // XS - and the chart takes whatever the frame ends up being, so the room costs it nothing.
+    static constexpr int kHeight = 760;
 
     static juce::Point<int> getDesignSize() { return { kWidth, kHeight }; }
 
@@ -192,7 +194,7 @@ private:
     // Wider than it was. Two knobs side by side at 200 put their tick labels almost touching,
     // which reads as cramped rather than as small - they were always the standard XS size.
     static constexpr int kStarPanelWidth  = 244;
-    static constexpr int kStarPanelHeight = 316;
+    static constexpr int kStarPanelHeight = 300;
 
     void layoutWorkspaceContent();
     void addRandomStar();
