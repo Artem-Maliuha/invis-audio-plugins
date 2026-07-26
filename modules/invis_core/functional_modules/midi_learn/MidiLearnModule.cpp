@@ -35,12 +35,14 @@ void MidiLearnModule::bindCcToParameter(int cc, const juce::String& parameterID)
 {
     if (cc < 0 || cc >= kNumCc) return;
     ccToParam[static_cast<size_t>(cc)].store(indexOf(parameterID), std::memory_order_release);
+    version.fetch_add(1, std::memory_order_release);
 }
 
 void MidiLearnModule::unbindCc(int cc)
 {
     if (cc < 0 || cc >= kNumCc) return;
     ccToParam[static_cast<size_t>(cc)].store(-1, std::memory_order_release);
+    version.fetch_add(1, std::memory_order_release);
 }
 
 void MidiLearnModule::unbindParameter(const juce::String& parameterID)
@@ -51,6 +53,8 @@ void MidiLearnModule::unbindParameter(const juce::String& parameterID)
     for (auto& cell : ccToParam)
         if (cell.load(std::memory_order_acquire) == index)
             cell.store(-1, std::memory_order_release);
+
+    version.fetch_add(1, std::memory_order_release);
 }
 
 int MidiLearnModule::getCcForParameter(const juce::String& parameterID) const
@@ -80,7 +84,10 @@ void MidiLearnModule::processMidi(const juce::MidiBuffer& midiBuffer,
         // LEARNING COMPLETES HERE, because here is where the controller actually arrives. All it
         // writes is one int into one atomic cell - no allocation, no string, nothing to lock.
         if (const int arming = learnTarget.exchange(-1, std::memory_order_acq_rel); arming >= 0)
+        {
             ccToParam[static_cast<size_t>(cc)].store(arming, std::memory_order_release);
+            version.fetch_add(1, std::memory_order_release);
+        }
 
         const int index = ccToParam[static_cast<size_t>(cc)].load(std::memory_order_acquire);
         if (index < 0 || index >= static_cast<int>(params.size())) continue;
@@ -127,6 +134,7 @@ juce::ValueTree MidiLearnModule::toValueTree() const
 void MidiLearnModule::restoreFromValueTree(const juce::ValueTree& tree)
 {
     for (auto& cell : ccToParam) cell.store(-1, std::memory_order_release);
+    version.fetch_add(1, std::memory_order_release);
 
     if (!tree.hasType(getStateType())) return;
 

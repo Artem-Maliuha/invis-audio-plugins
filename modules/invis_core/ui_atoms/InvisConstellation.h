@@ -613,6 +613,9 @@ public:
     std::function<void(int observerIndex)> onObserverDragStarted;
     std::function<void(int observerIndex)> onObserverDragEnded;
 
+    /** Right-click on the reticle. The chart does not know what MIDI is; the host does. */
+    std::function<void(int observerIndex)> onObserverSecondaryClick;
+
     std::function<void(int index)> onNodeClicked;
 
     /**

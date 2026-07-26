@@ -102,6 +102,8 @@ private:
     OutputSidebarUI outputUI;
 
     MidiLearnModule* midiLearn { nullptr };
+    int lastMidiVersion { -1 };
+    std::vector<std::pair<ui::InvisKnob*, juce::String>> midiControls;
     ui::InvisPopupLookAndFeel popupLook;
     juce::Component* workspace { nullptr };
     juce::Rectangle<int> workspaceBounds;

@@ -767,6 +767,62 @@ void ConstellationWorkspace::tick(float dt)
     effectPanel.tickLamps(dt);
 }
 
+void ConstellationWorkspace::enableMidiLearn(MidiLearnModule& module)
+{
+    midiLearn = &module;
+
+    constellation.onObserverSecondaryClick = [this](int observer)
+    {
+        if (midiLearn == nullptr) return;
+
+        const auto tag = juce::String(InvisChassisDSP::kObserverPrefix)
+                       + juce::String(juce::jlimit(0, 1, observer));
+
+        const juce::String ids[] = { tag + "x", tag + "y" };
+        const int bound[] = { midiLearn->getCcForParameter(ids[0]),
+                              midiLearn->getCcForParameter(ids[1]) };
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader("OBSERVER " + juce::String(observer + 1));
+
+        for (int axis = 0; axis < 2; ++axis)
+        {
+            const juce::String name = (axis == 0 ? "X" : "Y");
+            const auto suffix = bound[axis] >= 0 ? "  -  CC " + juce::String(bound[axis])
+                                                 : juce::String();
+
+            menu.addItem(1 + axis, "Learn " + name + suffix);
+        }
+
+        if (bound[0] >= 0 || bound[1] >= 0)
+        {
+            menu.addSeparator();
+            menu.addItem(3, "Forget both");
+        }
+
+        menu.setLookAndFeel(&popupLook);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&constellation)
+                                                     .withMinimumWidth(150)
+                                                     .withStandardItemHeight(19),
+                           [this, ids](int result)
+        {
+            if (midiLearn == nullptr || result <= 0) return;
+
+            if (result == 3)
+            {
+                midiLearn->unbindParameter(ids[0]);
+                midiLearn->unbindParameter(ids[1]);
+                return;
+            }
+
+            // A toggle, as everywhere else: a learn you cannot call off binds the next stray
+            // controller to whatever you were only asking about.
+            if (midiLearn->isLearning()) midiLearn->cancelLearning();
+            else                         midiLearn->startLearning(ids[result - 1]);
+        });
+    };
+}
+
 void ConstellationWorkspace::pushObserverToParams(int index)
 {
     if (syncingObserver) return;

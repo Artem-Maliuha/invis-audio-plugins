@@ -11,6 +11,7 @@ ConstellationRoyalEditor::ConstellationRoyalEditor(ConstellationRoyalProcessor& 
     canvas.addAndMakeVisible(chassis);
     chassis.setWorkspace(workspace);
     chassis.enableMidiLearn(p.midiLearn);
+    workspace.enableMidiLearn(p.midiLearn);
 
     // The instrument advances on the frame's clock, and reloads when the frame swaps state.
     chassis.onTick = [this](float dt) { workspace.tick(dt); };

@@ -53,15 +53,17 @@ void InvisChassisUI::enableMidiLearn(MidiLearnModule& module)
     midiLearn = &module;
 
     // Each knob names its own parameter, because only the chassis knows which one it drives.
-    const std::pair<ui::InvisKnob*, juce::String> controls[] = {
-        { &inputUI.getTrimKnob(),   juce::String(InvisChassisDSP::kInputPrefix)  + "trim" },
-        { &inputUI.getHpfKnob(),    juce::String(InvisChassisDSP::kInputPrefix)  + "hpf_freq" },
-        { &inputUI.getLpfKnob(),    juce::String(InvisChassisDSP::kInputPrefix)  + "lpf_freq" },
-        { &outputUI.getOutputKnob(),juce::String(InvisChassisDSP::kOutputPrefix) + "gain" },
+    midiControls = {
+        { &inputUI.getTrimKnob(),    juce::String(InvisChassisDSP::kInputPrefix)  + "trim" },
+        { &inputUI.getHpfKnob(),     juce::String(InvisChassisDSP::kInputPrefix)  + "hpf_freq" },
+        { &inputUI.getLpfKnob(),     juce::String(InvisChassisDSP::kInputPrefix)  + "lpf_freq" },
+        { &outputUI.getOutputKnob(), juce::String(InvisChassisDSP::kOutputPrefix) + "gain" },
     };
 
-    for (const auto& [knob, id] : controls)
+    for (const auto& [knob, id] : midiControls)
         knob->onSecondaryClick = [this, knob, id]() { showMidiMenu(*knob, id); };
+
+    lastMidiVersion = -1;   // force one refresh, so restored bindings show immediately
 }
 
 void InvisChassisUI::showMidiMenu(juce::Component& anchor, const juce::String& parameterID)
@@ -144,6 +146,17 @@ void InvisChassisUI::timerCallback()
     const float gainStageDb = topUI.getGainStageTargetDb();
     inputUI.setGainStageTargetDb(gainStageDb);
     outputUI.setGainStageTargetDb(gainStageDb);
+
+    // BADGES, ON CHANGE ONLY. A learn completes in the audio callback, which the UI has no other
+    // way of hearing about - but asking every control every frame means a table scan per knob per
+    // frame for something that changes a handful of times in a session.
+    if (midiLearn != nullptr && midiLearn->getVersion() != lastMidiVersion)
+    {
+        lastMidiVersion = midiLearn->getVersion();
+
+        for (const auto& [knob, id] : midiControls)
+            knob->setMidiCc(midiLearn->getCcForParameter(id));
+    }
 
     const float dt = 1.0f / 60.0f;
     topUI.tickAnimations(dt);

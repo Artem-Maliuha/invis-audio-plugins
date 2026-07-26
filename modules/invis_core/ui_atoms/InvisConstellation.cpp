@@ -1539,6 +1539,13 @@ void InvisConstellation::mouseDown(const juce::MouseEvent& e)
     // must never be blocked by something drawn under it.
     if (const int o = hitTestObserver(e.position); o >= 0)
     {
+        // Asking about the observer must not move it, so the secondary click never becomes a drag.
+        if (e.mods.isPopupMenu())
+        {
+            if (onObserverSecondaryClick) onObserverSecondaryClick(o);
+            return;
+        }
+
         grab = Grab::Observer;
         grabbedObserver = o;
 

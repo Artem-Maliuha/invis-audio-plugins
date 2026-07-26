@@ -177,6 +177,16 @@ public:
     /** Right-click. The chassis hangs MIDI Learn here; the atom itself stays unaware of MIDI. */
     std::function<void()> onSecondaryClick;
 
+    /**
+     * A controller number to show, or -1 for none.
+     *
+     * A binding you cannot see is a binding you will forget you made, and then spend an afternoon
+     * wondering why a knob moves on its own. It is deliberately a NUMBER and not a lamp: which
+     * controller matters when you are looking at a desk with eight of them.
+     */
+    void setMidiCc(int cc) { if (cc == midiCc) return; midiCc = cc; repaint(); }
+    int getMidiCc() const { return midiCc; }
+
     std::function<void()> onDragStarted;
     std::function<void()> onDragEnded;
 
@@ -281,6 +291,7 @@ private:
     float currentValue { 0.0f };
     float defaultValue { 0.0f };
     bool isOffState { false };
+    int midiCc { -1 };
 
     OffPosition offPosition { OffPosition::None };
     KnobScaleCurve scaleCurve { KnobScaleCurve::Linear };

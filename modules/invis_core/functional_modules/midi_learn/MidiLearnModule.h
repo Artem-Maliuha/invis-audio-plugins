@@ -48,6 +48,15 @@ public:
     /** -1 when nothing is bound to it. */
     int getCcForParameter(const juce::String& parameterID) const;
 
+    /**
+     * Bumped whenever a binding changes, INCLUDING when learning completes on the audio thread.
+     *
+     * The UI cannot poll getCcForParameter every frame: it is a linear scan over the table for each
+     * control, and a learn completes in a callback the UI has no other way of hearing about. One
+     * integer to compare against turns "ask everything constantly" into "ask when something moved".
+     */
+    int getVersion() const { return version.load(std::memory_order_acquire); }
+
     /** Audio thread. */
     void processMidi(const juce::MidiBuffer& midiBuffer, juce::AudioProcessorValueTreeState& apvts);
 
@@ -61,6 +70,7 @@ private:
     std::vector<juce::RangedAudioParameter*> params;   // fixed after prepare()
     std::array<std::atomic<int>, kNumCc> ccToParam;
     std::atomic<int> learnTarget { -1 };
+    std::atomic<int> version { 0 };
 };
 
 } // namespace invis::modules

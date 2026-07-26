@@ -651,6 +651,18 @@ void InvisKnob::paint(juce::Graphics& g)
     {
         juce::MessageManager::callAsync([this]() { repaint(); });
     }
+
+    // THE BINDING, said plainly. Small, dim and out of the way of the value - it is a fact about
+    // the control, not a reading from it.
+    if (midiCc >= 0)
+    {
+        auto box = layout.content;
+        box = box.removeFromBottom(layout.valueFontSize * 1.15f);
+
+        g.setFont(InvisFonts::getDisplayFont(layout.tickFontSize * 0.95f, false));
+        g.setColour(theme.textSecondary.withAlpha(0.55f));
+        g.drawText("CC " + juce::String(midiCc), box, juce::Justification::centredRight, false);
+    }
 }
 
 void InvisKnob::updateIndicatorBallistics(float deltaTimeSeconds)

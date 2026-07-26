@@ -7,6 +7,7 @@
 #include "../../design_system/InvisPopupLookAndFeel.h"
 #include "../../design_system/InvisEffectPalette.h"
 #include "../../effects/InvisConstellationEngine.h"
+#include "../midi_learn/MidiLearnModule.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <optional>
 
@@ -46,6 +47,14 @@ public:
 
     /** After A/B/C or a preset: the chart lives in the state tree and has to come back with it. */
     void reloadFromState();
+
+    /**
+     * MIDI Learn for the observer - the one part of the chart that is a parameter.
+     *
+     * It gets two entries rather than one, because a position is two numbers and a controller is
+     * one. Binding a fader to X and another to Y is how you actually play this.
+     */
+    void enableMidiLearn(MidiLearnModule& module);
 
     ui::InvisConstellation& getChart() { return constellation; }
 
@@ -228,6 +237,7 @@ private:
     // the state being restored. One flag, because the loop is one call deep.
     bool restoringChart { false };
     bool pushingToEngine { false };
+    MidiLearnModule* midiLearn { nullptr };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ConstellationWorkspace)
 };
