@@ -94,6 +94,9 @@ private:
         invis::ui::InvisCellSelector channelModeCell;
     };
 
+    /** The chassis's own dropdown - a menu here is part of the instrument, not of the host. */
+    invis::ui::InvisPopupLookAndFeel popupLook;
+
     ChartPanel chartPanel { *this };
     static constexpr int kChartPanelHeight = 108;
 

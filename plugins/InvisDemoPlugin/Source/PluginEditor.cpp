@@ -473,6 +473,11 @@ void InvisDemoPluginEditor::pullChartFromState()
 
     const juce::ScopedValueSetter<bool> guard(restoringChart, true);
     constellation.restoreFromValueTree(tree);
+
+    // The channel mode came back with the chart, so the control that sets it has to come back too
+    // - otherwise the observer says M+S while the panel still reads L+R.
+    chartPanel.channelModeCell.setSelectedIndex(static_cast<int>(constellation.getChannelMode()),
+                                                juce::dontSendNotification);
     starPanel.showFor(-1);
 }
 
@@ -492,8 +497,10 @@ void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> a
     // UNDER THE CURSOR, where the star is about to appear. A menu anchored to a button somewhere
     // else makes you look away from the spot you just chose, and then look back to find out
     // whether it landed there.
-    auto options = juce::PopupMenu::Options().withMinimumWidth(140)
-                                             .withStandardItemHeight(22);
+    menu.setLookAndFeel(&popupLook);
+
+    auto options = juce::PopupMenu::Options().withMinimumWidth(150)
+                                             .withStandardItemHeight(24);
 
     if (at.has_value())
     {

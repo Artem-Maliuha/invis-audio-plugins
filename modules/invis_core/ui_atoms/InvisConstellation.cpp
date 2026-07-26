@@ -1585,6 +1585,13 @@ void InvisConstellation::paintGlassWell(juce::Graphics& g, juce::Rectangle<float
 
     g.setGradientFill(depth);
     g.fillEllipse(area.getCentreX() - reach, area.getCentreY() - reach, reach * 2.0f, reach * 2.0f);
+
+    // A HAIRLINE, not a bezel. The field still needs an edge to be a place rather than a spill of
+    // light across the panel - but it has to be quiet enough that a star sitting on it does not
+    // look trapped, which is what the machined frame did.
+    const auto m = getMetrics(padSize);
+    g.setColour(juce::Colours::white.withAlpha(0.07f));
+    g.drawRoundedRectangle(area.reduced(0.5f), m.corner, 1.0f);
 }
 
 void InvisConstellation::paintAura(juce::Graphics& g, const ConstellationNode& node, float weight)
@@ -2049,10 +2056,22 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
 
 void InvisConstellation::paintGhostNode(juce::Graphics& g)
 {
-    if (static_cast<int>(nodes.size()) >= kMaxNodes) return;
-
     const auto m = getMetrics(padSize);
     const auto theme = getEffectiveTheme();
+
+    // AN EMPTY SKY HAS TO SAY SO. Until the first star exists there is nothing on screen to hover,
+    // so the offer that appears under the cursor can never introduce itself - you would have to
+    // already suspect the field was clickable to discover that it is.
+    if (nodes.empty())
+    {
+        g.setFont(InvisFonts::getDisplayFont(m.labelFontSize * 0.9f, false));
+        g.setColour(theme.textSecondary.withAlpha(0.32f));
+        g.drawText("CLICK SOMEWHERE TO ADD A NEW STAR",
+                   getPadArea().withSizeKeepingCentre(getPadArea().getWidth(), 16.0f),
+                   juce::Justification::centred, false);
+    }
+
+    if (static_cast<int>(nodes.size()) >= kMaxNodes) return;
 
     // EMPTY SKY IS AN OFFER TOO. A line offers a star between two others; open space offers one on
     // its own, and until now said nothing at all - the only way to find out that a chart could
