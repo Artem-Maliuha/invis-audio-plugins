@@ -81,6 +81,18 @@ private:
         /** Width of the two-row layout; `singleRowWidth` reports what one row would need. */
         int getRequiredWidth(int* singleRowWidth = nullptr) const;
 
+        /**
+         * ONE DECISION, MADE OUTSIDE.
+         *
+         * This used to be worked out twice - once here against the bounds, once by the caller
+         * against the chart - and two answers to one question is one answer too many. They
+         * disagreed, the row laid itself out as one and was sized for two, and MODE was pushed off
+         * the left end. Whoever hands over the bounds knows which layout they are for.
+         */
+        void setSingleRow(bool shouldBeOneRow) { singleRow = shouldBeOneRow; resized(); }
+
+        bool singleRow { false };
+
         /** Greys the ADD keys and updates the count once the chart is full. */
         void refreshLimit();
 

@@ -603,18 +603,21 @@ void ConstellationWorkspace::SkyTools::resized()
 
     auto full = getLocalBounds();
 
-    // ONE ROW WHEN IT FITS. Measured against the width actually handed over rather than decided in
-    // advance: shortening a label or dropping a key should collapse the row on its own, not wait
-    // for somebody to notice and change a constant.
-    int single = 0;
-    getRequiredWidth(&single);
-    const bool oneRow = single <= full.getWidth();
+    const bool oneRow = singleRow;
 
     auto top = full.removeFromTop(kSkyToolsRowHeight);
-    if (!oneRow) full.removeFromTop(4);
-    auto bottom = oneRow ? top : full.removeFromTop(kSkyToolsRowHeight);
+    juce::Rectangle<int> second;
 
-    auto* area = &bottom;
+    if (!oneRow)
+    {
+        full.removeFromTop(4);
+        second = full.removeFromTop(kSkyToolsRowHeight);
+    }
+
+    // ONE RECT WHEN THERE IS ONE ROW. `bottom` used to be a COPY of `top`, so both halves started
+    // consuming from the same right edge and drew straight over each other - the layout was
+    // correct in two rows and silently overlapping in one.
+    auto* area = oneRow ? &top : &second;
 
     // Right to left: each group places its keys, then claims the caption slot to their left, so
     // the label always ends up beside exactly what it names however the keys are sized.
@@ -644,8 +647,10 @@ void ConstellationWorkspace::SkyTools::resized()
     area->removeFromRight(layout::kGapBonded);
     randomCaption = captionSlot("RANDOMIZE:");
 
-    // TOP ROW: what puts something on the sky in the first place. Same row when it all fits.
-    area = &top;
+    // What puts something on the sky in the first place. In two rows it starts a new one; in a
+    // single row it simply carries on to the left of what was just placed.
+    if (oneRow) area->removeFromRight(layout::kGapGroup);
+    else        area = &top;
 
     place(addRandomButton);
     area->removeFromRight(layout::kGapBonded);
@@ -903,11 +908,14 @@ void ConstellationWorkspace::layoutWorkspaceContent()
 
     constellation.setBoundsCentredIn(area);
 
-    // Given the FULL width of the chart, so it can decide for itself whether one row fits.
+    // ONE ROW WHEN IT FITS, decided here and TOLD to the row - see SkyTools::setSingleRow. Measured
+    // against the chart's own width, so shortening a label or dropping a key collapses the row on
+    // its own rather than waiting for somebody to change a constant.
     int single = 0;
     const int twoRow = skyTools.getRequiredWidth(&single);
     const bool oneRow = single + 3 * layout::kGapRelated <= constellation.getWidth();
 
+    skyTools.setSingleRow(oneRow);
     skyTools.setBounds(constellation.getBounds()
                            .removeFromTop((oneRow ? SkyTools::kSkyToolsRowHeight : kSkyToolsHeight)
                                           + 2 * layout::kGapRelated)
