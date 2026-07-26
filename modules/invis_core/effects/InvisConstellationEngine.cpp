@@ -85,6 +85,17 @@ AlgorithmKind InvisConstellationEngine::getStarKind(int star) const
     return slots[0][star]->getKind();
 }
 
+float InvisConstellationEngine::getStarActivity(int star) const
+{
+    if (star < 0 || star >= kMaxStars) return -1.0f;
+
+    float best = -1.0f;
+    for (int s = 0; s < 2; ++s)
+        if (slots[s][star] != nullptr) best = std::max(best, slots[s][star]->getActivity());
+
+    return best;
+}
+
 void InvisConstellationEngine::runStream(float* samples, int numSamples,
                                           const RoutingPlan::Stream& stream, int streamIndex)
 {

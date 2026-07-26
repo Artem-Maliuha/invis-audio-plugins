@@ -61,6 +61,9 @@ public:
     float getStarParam(int star, int paramIndex) const;
     AlgorithmKind getStarKind(int star) const;
 
+    /** The louder of the two streams: a star working hard on one channel is working hard. */
+    float getStarActivity(int star) const;
+
     void process(juce::AudioBuffer<float>& buffer);
 
 private:

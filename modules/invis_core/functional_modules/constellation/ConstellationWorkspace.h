@@ -39,8 +39,8 @@ public:
 
     void resized() override;
 
-    /** Advance the chart's animation. Drive it from the chassis clock. */
-    void tick(float dt) { constellation.tickAnimation(dt); }
+    /** Advance the chart's animation and the effect lamps. Drive it from the chassis clock. */
+    void tick(float dt);
 
     /** After A/B/C or a preset: the chart lives in the state tree and has to come back with it. */
     void reloadFromState();
@@ -93,7 +93,6 @@ private:
         ui::InvisButton addStarButton;      // asks which effect
         ui::InvisButton addRandomButton;    // does not
         ui::InvisButton shuffleStarsButton;
-        ui::InvisButton shuffleSensButton;
         ui::InvisButton shuffleObserverButton;
         ui::InvisButton deleteUnusedButton;
         ui::InvisButton deleteLinksButton;
@@ -163,6 +162,7 @@ private:
 
         /** Rebuilds the knobs from whatever the selected star's algorithm says it has. */
         void showFor(int starIndex);
+        void tickLamps(float dt);
 
         ConstellationWorkspace& owner;
         int index { -1 };

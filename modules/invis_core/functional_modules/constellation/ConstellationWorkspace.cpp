@@ -351,7 +351,10 @@ ConstellationWorkspace::EffectPanel::EffectPanel(ConstellationWorkspace& o) : ow
     for (int i = 0; i < dsp::kMaxEffectParams; ++i)
     {
         auto& k = paramKnobs[static_cast<size_t>(i)];
-        k.setKnobSize(ui::InvisKnobSize::XS);
+        // One size up from the block's controls. These are the ones you actually dial while
+        // listening - the block's are set once and left - and the panel has the room now that it
+        // is not sharing a column with anything else.
+        k.setKnobSize(ui::InvisKnobSize::S);
         // Through the CHART, not straight to the engine. Everything else about a star travels that
         // way, and a control that takes a shortcut is a control whose value is missing from the
         // saved state - which is exactly what happened to these.
@@ -392,6 +395,14 @@ void ConstellationWorkspace::EffectPanel::showFor(int starIndex)
 
             k.setValue(owner.constellation.getNode(index).effectParams[static_cast<size_t>(i)],
                        juce::dontSendNotification);
+
+            // THE LAMP GOES WHERE THE MEASUREMENT IS. Only the first knob of an algorithm that
+            // reports activity gets one, because only that one has a number behind it - a lamp on
+            // a knob whose level is inferred from its own position would say nothing you cannot
+            // already see from the pointer, which is exactly why the block's HPF and LPF have none.
+            const bool reports = owner.engine.getStarActivity(index) >= 0.0f;
+            k.setIndicatorLampVisible(reports && i == 0);
+            k.setIndicatorActive(reports && i == 0);
         }
     }
 
@@ -402,6 +413,17 @@ void ConstellationWorkspace::EffectPanel::showFor(int starIndex)
     repaint();
 }
 
+void ConstellationWorkspace::EffectPanel::tickLamps(float dt)
+{
+    if (index < 0 || numShown <= 0) return;
+
+    auto& lamp = paramKnobs[0];
+    if (!lamp.isIndicatorLampVisible()) return;
+
+    lamp.setIndicatorLevel(juce::jlimit(0.0f, 1.0f, owner.engine.getStarActivity(index)));
+    lamp.updateIndicatorBallistics(dt);
+}
+
 void ConstellationWorkspace::EffectPanel::resized()
 {
     using namespace ui;
@@ -409,7 +431,7 @@ void ConstellationWorkspace::EffectPanel::resized()
     auto area = getLocalBounds().reduced(10);
     area.removeFromTop(kPanelHeadingHeight + layout::kGapRelated);
 
-    const int knobH = InvisKnob::getIntrinsicSize(InvisKnobSize::XS).y;
+    const int knobH = InvisKnob::getIntrinsicSize(InvisKnobSize::S).y;
 
     for (int i = 0; i < numShown; i += 2)
     {
@@ -481,13 +503,11 @@ ConstellationWorkspace::SkyTools::SkyTools(ConstellationWorkspace& o) : owner(o)
     // Two shufflers, because they shuffle different things. One rebuilds the INSTRUMENT - where
     // the stars sit and how they are joined; the other only moves WHERE YOU ARE STANDING, which
     // is the fastest way to hear what an instrument you already like can do.
-    // Three shufflers, because they roll three different questions. STARS is the instrument -
-    // where they sit and how they are joined. SENS is how it is VOICED - how far each one carries.
-    // OBSERVER is only where you are standing. Rolling them together meant you could never keep a
-    // figure you liked and re-voice just that.
-    key(shuffleStarsButton,    "STARS",         [this]() { owner.constellation.randomise(); });
-    key(shuffleSensButton,     "SENSITIVITIES", [this]() { owner.constellation.randomiseSensitivities(); });
-    key(shuffleObserverButton, "OBSERVERS",     [this]() { owner.constellation.randomiseObservers(); });
+    // Two shufflers. STARS is the instrument - where they sit and how they are joined. OBSERVER is
+    // only where you are standing, which is the fastest way to hear what a chart you already like
+    // can do without disturbing it.
+    key(shuffleStarsButton,    "STARS",     [this]() { owner.constellation.randomise(); });
+    key(shuffleObserverButton, "OBSERVERS", [this]() { owner.constellation.randomiseObservers(); });
 
     // THREE WAYS TO TAKE THINGS AWAY, because a chart accumulates three different kinds of clutter.
     // UNUSED sweeps the stars nothing reaches - added to try, then stranded when the observer moved
@@ -536,7 +556,6 @@ int ConstellationWorkspace::SkyTools::getRequiredWidth(int* singleRowWidth) cons
 
     const int random = caption("RANDOMIZE:") + layout::kGapBonded
                      + shuffleStarsButton.getIntrinsicSize().x + layout::kGapBonded
-                     + shuffleSensButton.getIntrinsicSize().x + layout::kGapBonded
                      + shuffleObserverButton.getIntrinsicSize().x;
 
     const int erase = caption("DELETE:") + layout::kGapBonded
@@ -621,8 +640,6 @@ void ConstellationWorkspace::SkyTools::resized()
 
     place(shuffleObserverButton);
     area->removeFromRight(layout::kGapBonded);
-    place(shuffleSensButton);
-    area->removeFromRight(layout::kGapBonded);
     place(shuffleStarsButton);
     area->removeFromRight(layout::kGapBonded);
     randomCaption = captionSlot("RANDOMIZE:");
@@ -693,6 +710,12 @@ ConstellationWorkspace::ConstellationWorkspace(dsp::InvisConstellationEngine& e,
 ConstellationWorkspace::~ConstellationWorkspace() = default;
 
 void ConstellationWorkspace::resized() { layoutWorkspaceContent(); }
+
+void ConstellationWorkspace::tick(float dt)
+{
+    constellation.tickAnimation(dt);
+    effectPanel.tickLamps(dt);
+}
 
 void ConstellationWorkspace::pushChartToEngine()
 {

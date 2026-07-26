@@ -75,6 +75,15 @@ public:
     virtual void setParam(int index, float normalized) = 0;
 
     virtual juce::Range<int> getParamRange() const = 0;
+
+    /**
+     * How hard the algorithm is WORKING, 0..1, or -1 when it has nothing to report.
+     *
+     * Measured, not derived from a knob. A drive control tells you where you put it; this tells
+     * you what the material is doing to the curve, which is a different fact and the one worth a
+     * lamp: the same setting bites on a loud passage and barely touches a quiet one.
+     */
+    virtual float getActivity() const { return -1.0f; }
 };
 
 /** What an algorithm exposes, looked up by name so the catalogue and the DSP cannot drift apart. */

@@ -133,6 +133,9 @@ struct ConstellationNode {
     // downward one - which is all the polarity was ever standing in for.
     float sensitivity { 0.5f };
 
+    /** Counts down after birth. Not saved: a reloaded chart is not a chart you just built. */
+    float birthFlash { 0.0f };
+
     juce::Colour colour { juce::Colour::fromRGB(0, 229, 255) };
     juce::String label;
 };
@@ -319,6 +322,15 @@ public:
      * Hops BETWEEN stages are untouched by this and remain full sends: that is the routing law,
      * and it is a different question from how much the listener feeds the chart in the first place.
      */
+    /**
+     * A NEW STAR ANNOUNCES ITSELF, once, for about a second.
+     *
+     * The chart can be busy and a new star arrives dark - unlinked, and often out of the observer's
+     * reach, so nothing about it is lit. On a field with a dozen others you simply lose it, and
+     * hunting for the thing you just made is the opposite of what adding one is for.
+     */
+    static constexpr float kBirthFlash = 1.1f;
+
     static constexpr float kMaxEntrySend = 0.5f;
 
     static constexpr float kMinReach = 0.07f;
@@ -363,6 +375,7 @@ public:
     void setPadSize(InvisConstellationSize size) { padSize = size; repaint(); }
 
     // --- Nodes ---
+    /** Adds a star and FLASHES it - see kBirthFlash. */
     int addNode(const juce::String& label, juce::Colour colour);
 
     /** Same, but placed where you asked - used by the click-on-empty-sky offer. */

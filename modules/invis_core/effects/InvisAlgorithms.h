@@ -374,11 +374,22 @@ public:
 
     juce::Range<int> getParamRange() const override { return { 0, NumParams }; }
 
+    float getActivity() const override { return activity; }
+
     void process(float* x, int n) override
     {
+        double bent = 0.0, straight = 0.0;
+
         for (int s = 0; s < n; ++s)
         {
             float v = shape(x[s] * drive + bias) * makeup;
+
+            // HOW FAR THE CURVE BENT IT, against what a straight wire would have passed. This is
+            // the honest answer to "is it saturating": at low drive the two paths agree and the
+            // lamp stays dark however loud the material is, and it lights when the shape is
+            // actually being used.
+            bent += static_cast<double>(v - x[s]) * (v - x[s]);
+            straight += static_cast<double>(x[s]) * x[s];
 
             // The bias, and any asymmetry the curve introduces, leave DC behind. Left in it would
             // stack up through a chain of stars and eat headroom for nothing audible.
@@ -390,6 +401,20 @@ public:
             // the darker half is most of what "tape" means.
             const float low = tilt.process(v);
             x[s] = juce::jmap(tone, low, v);
+        }
+
+        if (straight > 1.0e-9)
+        {
+            const float ratio = static_cast<float>(std::sqrt(bent / straight));
+            const float target = juce::jlimit(0.0f, 1.0f, ratio * 1.6f);
+
+            // Fast up, slow down, like every other lamp on the panel: a lamp that follows the
+            // material sample for sample is a flicker, not a reading.
+            activity += (target - activity) * (target > activity ? 0.35f : 0.06f);
+        }
+        else
+        {
+            activity *= 0.90f;
         }
     }
 
@@ -413,6 +438,7 @@ private:
     OnePole tilt;
 
     float drive { 4.0f }, character { 0.0f }, bias { 0.0f }, tone { 0.7f }, makeup { 1.0f };
+    float activity { 0.0f };
     float dcBlockA { 0.999f }, dcX { 0.0f }, dcY { 0.0f };
 };
 

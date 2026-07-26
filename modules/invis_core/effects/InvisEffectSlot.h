@@ -85,6 +85,9 @@ public:
 
     bool isReady() const { return effect != nullptr; }
 
+    /** 0..1 while the algorithm has something to report, -1 when it has not. Audio thread writes. */
+    float getActivity() const { return effect != nullptr ? effect->getActivity() : -1.0f; }
+
 private:
     std::unique_ptr<InvisEffect> effect;
     AlgorithmKind kind { AlgorithmKind::Spatial };

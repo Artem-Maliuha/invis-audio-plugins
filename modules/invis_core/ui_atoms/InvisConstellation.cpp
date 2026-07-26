@@ -1018,6 +1018,7 @@ int InvisConstellation::addNode(const juce::String& label, juce::Colour colour)
     node.colour = colour;
     node.label = label;
 
+    node.birthFlash = kBirthFlash;
     nodes.push_back(node);
 
     // Arrives UNLINKED. A lone star is simply a parallel send, which is the least surprising
@@ -1345,6 +1346,7 @@ void InvisConstellation::insertNodeOnLink(int linkIndex, juce::Point<float> norm
     node.label = "NEW";
 
     const int newIndex = static_cast<int>(nodes.size());
+    node.birthFlash = kBirthFlash;
     nodes.push_back(node);
 
     // SPLIT the line rather than adding beside it: clicking a line means "put a stage here", and
@@ -1363,6 +1365,19 @@ void InvisConstellation::insertNodeOnLink(int linkIndex, juce::Point<float> norm
 
 void InvisConstellation::tickAnimation(float dt)
 {
+    // THE BIRTH FLASH RUNS BEFORE THE IDLE CHECK. A new star usually arrives with nothing flowing
+    // through it - unlinked, often out of reach - which is exactly when it most needs to say where
+    // it landed, and the one moment the clock would otherwise be asleep.
+    bool flashing = false;
+    for (auto& node : nodes)
+        if (node.birthFlash > 0.0f)
+        {
+            node.birthFlash = std::max(0.0f, node.birthFlash - dt);
+            flashing = true;
+        }
+
+    if (flashing) repaint();
+
     // Nothing reaching anything means nothing is moving, and now that the charge itself obeys that
     // rule the clock may rest with it: an idle chart draws exactly the same picture on every frame.
     bool anyFlow = false;
@@ -2547,6 +2562,21 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
         g.setColour(node.colour.withAlpha(0.42f * relayed));
         g.drawEllipse(centre.x - rNode * 1.28f, centre.y - rNode * 1.28f,
                       rNode * 2.56f, rNode * 2.56f, 1.1f);
+    }
+
+    // THE ARRIVAL OF THE STAR ITSELF - one ring on its way out, so you see where it landed even on
+    // a crowded chart, where it appears dark and unconnected and is otherwise simply lost.
+    if (node.birthFlash > 0.0f)
+    {
+        const float t = node.birthFlash / kBirthFlash;          // 1 -> 0
+        const float ring = rNode * (1.0f + 3.4f * (1.0f - t));
+
+        g.setColour(node.colour.withAlpha(0.55f * t * t));
+        g.drawEllipse(centre.x - ring, centre.y - ring, ring * 2.0f, ring * 2.0f, 2.2f * t);
+
+        g.setColour(juce::Colours::white.withAlpha(0.30f * t * t));
+        g.drawEllipse(centre.x - ring * 0.62f, centre.y - ring * 0.62f,
+                      ring * 1.24f, ring * 1.24f, 1.4f * t);
     }
 
     // THE STRIKE. It was there and nobody could see it: the ring started at the star's own edge,
