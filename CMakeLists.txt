@@ -21,3 +21,4 @@ juce_add_module(modules/invis_core)
 
 # Subdirectories for plugins
 add_subdirectory(plugins/InvisDemoPlugin)
+add_subdirectory(plugins/ConstellationRoyal)

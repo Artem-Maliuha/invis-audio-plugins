@@ -4,16 +4,16 @@
 #include <invis_core/invis_core.h>
 
 /**
- * The bench editor, now that the instrument lives in invis_core.
+ * The whole editor.
  *
- * This is what a plugin's editor is supposed to look like: a chassis, a workspace, and the two
- * lines that introduce them. Everything that used to be here is shared code now - which is the
- * point, because the first real plugin would otherwise have begun by copying it.
+ * A chassis, a workspace, and the lines that introduce them. That this is the entire file is the
+ * point of everything in invis_core: the instrument, the frame and the wiring between them are
+ * shared, so a plugin is the choice of what goes in the middle and nothing else.
  */
-class InvisDemoPluginEditor : public juce::AudioProcessorEditor {
+class ConstellationRoyalEditor : public juce::AudioProcessorEditor {
 public:
-    explicit InvisDemoPluginEditor(InvisDemoPluginProcessor& p);
-    ~InvisDemoPluginEditor() override = default;
+    explicit ConstellationRoyalEditor(ConstellationRoyalProcessor& p);
+    ~ConstellationRoyalEditor() override = default;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -21,17 +21,17 @@ public:
 private:
     /** Root design-pixel canvas. Holds every child; the editor only zooms it. */
     struct Canvas : juce::Component {
-        explicit Canvas(InvisDemoPluginEditor& o) : owner(o) { setInterceptsMouseClicks(false, true); }
+        explicit Canvas(ConstellationRoyalEditor& o) : owner(o) { setInterceptsMouseClicks(false, true); }
         void paint(juce::Graphics& g) override { owner.paintCanvas(g); }
         void resized() override { owner.layoutCanvas(); }
-        InvisDemoPluginEditor& owner;
+        ConstellationRoyalEditor& owner;
     };
 
     void paintCanvas(juce::Graphics& g);
     void layoutCanvas();
 
     Canvas canvas { *this };
-    InvisDemoPluginProcessor& processorRef;
+    ConstellationRoyalProcessor& processorRef;
 
     invis::modules::InvisChassisUI chassis;
     invis::modules::ConstellationWorkspace workspace;
@@ -41,5 +41,5 @@ private:
             invis::modules::ConstellationWorkspace::getDesignSize())
     };
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InvisDemoPluginEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ConstellationRoyalEditor)
 };

@@ -61,6 +61,8 @@
 #include "effects/InvisEffectSlot.h"
 #include "effects/InvisConstellationEngine.h"
 
+#include "functional_modules/constellation/ConstellationWorkspace.h"
+
 #include "chassis/InvisChassisDSP.h"
 #include "chassis/InvisChassisUI.h"
 #include "functional_modules/oversampling/OversamplingDSP.h"

@@ -1,7 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
+ConstellationRoyalEditor::ConstellationRoyalEditor(ConstellationRoyalProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
       chassis(p.chassis, p.apvts),
       workspace(p.engine, p.apvts)
@@ -14,8 +14,8 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     chassis.onTick = [this](float dt) { workspace.tick(dt); };
     chassis.onStateRestored = [this]() { workspace.reloadFromState(); };
 
-    // A catalogue with real depth, so the preset tree is exercised rather than assumed. Storage is
-    // still not implemented - selecting a preset only reports the path.
+    // Presets are named after real constellations, which is the series' own convention. Storage is
+    // not implemented yet - selecting one only reports its path.
     using invis::modules::PresetNode;
     chassis.getTop().setPresetTree(PresetNode::folder("", {
         PresetNode::preset("Init"),
@@ -38,13 +38,13 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     invis::ui::applyDesignResizeLimits(*this, designSize.x, designSize.y);
 }
 
-void InvisDemoPluginEditor::paint(juce::Graphics& g)
+void ConstellationRoyalEditor::paint(juce::Graphics& g)
 {
     // The editor itself only fills the letterbox area; all artwork lives on the scaled canvas.
     g.fillAll(juce::Colours::black);
 }
 
-void InvisDemoPluginEditor::paintCanvas(juce::Graphics& g)
+void ConstellationRoyalEditor::paintCanvas(juce::Graphics& g)
 {
     const auto bounds = canvas.getLocalBounds().toFloat();
 
@@ -65,13 +65,13 @@ void InvisDemoPluginEditor::paintCanvas(juce::Graphics& g)
     g.fillAll();
 }
 
-void InvisDemoPluginEditor::resized()
+void ConstellationRoyalEditor::resized()
 {
     // The ONLY responsive maths in the whole editor: one zoom factor for the whole tree.
     invis::ui::applyDesignZoom(canvas, designSize.x, designSize.y, getLocalBounds());
 }
 
-void InvisDemoPluginEditor::layoutCanvas()
+void ConstellationRoyalEditor::layoutCanvas()
 {
     chassis.setBounds(canvas.getLocalBounds());
 }
