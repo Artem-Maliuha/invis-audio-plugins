@@ -22,6 +22,21 @@ struct EffectRecipe {
     const char* name;
     AlgorithmKind kind;
     std::array<float, kMaxEffectParams> defaults;
+
+    /**
+     * The block's mix, and it belongs to the RECIPE rather than to a global default.
+     *
+     * A star at the entry gets its balance from the observer's send, so its mix hardly matters
+     * there. In the middle of a chain the hop is a full send and the chart gives it no mix control
+     * at all - so this is the only thing deciding how much of the effect is in what passes
+     * through, and one value cannot be right for every algorithm.
+     *
+     * A saturator IS the sound at its stage and wants all of it. A reverb at full wet replaces
+     * what arrived instead of surrounding it. And a flanger at full wet stops being a flanger:
+     * comb interference is what you get from MIXING dry with delayed, so removing the dry removes
+     * the effect and leaves a detuned copy.
+     */
+    float dryWet { 1.0f };
 };
 
 /** Null when the name is not in the catalogue - a chart restored from an older state may hold one. */

@@ -607,6 +607,13 @@ void ConstellationWorkspace::resized() { layoutWorkspaceContent(); }
 
 void ConstellationWorkspace::pushChartToEngine()
 {
+    // GUARDED, because seeding a new star writes to the chart, and every one of those writes
+    // reports a change that lands back here. Without this a single added star ran the whole push
+    // once per parameter it owns.
+    if (pushingToEngine) return;
+
+    const juce::ScopedValueSetter<bool> guard(pushingToEngine, true);
+    bool seeded = false;
 
 
     for (int i = 0; i < constellation.getNumNodes(); ++i)
@@ -621,6 +628,13 @@ void ConstellationWorkspace::pushChartToEngine()
 
             for (int k = 0; k < ui::ConstellationNode::kMaxStarParams; ++k)
                 constellation.setNodeEffectParam(i, k, engine.getStarParam(i, k));
+
+            // ...including the MIX, which is per recipe rather than a global default: see
+            // EffectRecipe for why one number cannot be right for a saturator and a reverb alike.
+            if (const auto* recipe = dsp::findRecipe(node.label))
+                constellation.setNodeDryWet(i, recipe->dryWet);
+
+            seeded = true;
         }
 
         engine.setStarBlock(i, node.hpf, node.lpf, node.dryWet);
@@ -658,6 +672,10 @@ void ConstellationWorkspace::pushChartToEngine()
     }
 
     engine.setPlan(plan);
+
+    // The seeded values are part of the chart now, so they have to reach the state tree too - the
+    // callbacks that would normally carry them were the ones just suppressed.
+    if (seeded) pushChartToState();
 }
 
 void ConstellationWorkspace::pushChartToState()

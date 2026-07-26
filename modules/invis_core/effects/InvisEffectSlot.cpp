@@ -28,26 +28,30 @@ const EffectParam kSaturationParams[] = {
 };
 
 // The recipes. A family is one algorithm; a catalogue entry is a place to stand in it.
+//
+// The trailing number is the block's DRY/WET, and it is per entry for a reason - see EffectRecipe.
+// TREMOLO is the one modulation entry at full wet: it is an amplitude effect, and mixing it with
+// dry does not soften it, it cancels it.
 const EffectRecipe kRecipes[] = {
     //                                      size  fb    damp  mod   spread
-    { "HALL",    AlgorithmKind::Spatial,  { 0.30f, 0.72f, 0.45f, 0.28f, 0.75f, 0.0f } },
-    { "CHAMBER", AlgorithmKind::Spatial,  { 0.22f, 0.62f, 0.55f, 0.16f, 0.60f, 0.0f } },
-    { "PLATE",   AlgorithmKind::Spatial,  { 0.16f, 0.68f, 0.20f, 0.10f, 0.35f, 0.0f } },
-    { "SPRING",  AlgorithmKind::Spatial,  { 0.12f, 0.74f, 0.62f, 0.55f, 0.20f, 0.0f } },
-    { "DELAY",   AlgorithmKind::Spatial,  { 0.78f, 0.55f, 0.35f, 0.02f, 1.00f, 0.0f } },
-    { "ECHO",    AlgorithmKind::Spatial,  { 0.62f, 0.66f, 0.70f, 0.14f, 0.90f, 0.0f } },
+    { "HALL",    AlgorithmKind::Spatial,  { 0.30f, 0.72f, 0.45f, 0.28f, 0.75f, 0.0f }, 0.35f },
+    { "CHAMBER", AlgorithmKind::Spatial,  { 0.22f, 0.62f, 0.55f, 0.16f, 0.60f, 0.0f }, 0.35f },
+    { "PLATE",   AlgorithmKind::Spatial,  { 0.16f, 0.68f, 0.20f, 0.10f, 0.35f, 0.0f }, 0.38f },
+    { "SPRING",  AlgorithmKind::Spatial,  { 0.12f, 0.74f, 0.62f, 0.55f, 0.20f, 0.0f }, 0.40f },
+    { "DELAY",   AlgorithmKind::Spatial,  { 0.78f, 0.55f, 0.35f, 0.02f, 1.00f, 0.0f }, 0.32f },
+    { "ECHO",    AlgorithmKind::Spatial,  { 0.62f, 0.66f, 0.70f, 0.14f, 0.90f, 0.0f }, 0.34f },
 
     //                                        rate  depth delay fb    shape
-    { "CHORUS",  AlgorithmKind::Modulation, { 0.28f, 0.45f, 0.42f, 0.50f, 0.00f, 0.0f } },
-    { "FLANGER", AlgorithmKind::Modulation, { 0.22f, 0.80f, 0.06f, 0.82f, 0.85f, 0.0f } },
-    { "PHASER",  AlgorithmKind::Modulation, { 0.34f, 0.65f, 0.02f, 0.18f, 0.40f, 0.0f } },
-    { "TREMOLO", AlgorithmKind::Modulation, { 0.55f, 0.95f, 0.00f, 0.50f, 1.00f, 0.0f } },
+    { "CHORUS",  AlgorithmKind::Modulation, { 0.28f, 0.45f, 0.42f, 0.50f, 0.00f, 0.0f }, 0.50f },
+    { "FLANGER", AlgorithmKind::Modulation, { 0.22f, 0.80f, 0.06f, 0.82f, 0.85f, 0.0f }, 0.50f },
+    { "PHASER",  AlgorithmKind::Modulation, { 0.34f, 0.65f, 0.02f, 0.18f, 0.40f, 0.0f }, 0.50f },
+    { "TREMOLO", AlgorithmKind::Modulation, { 0.55f, 0.95f, 0.00f, 0.50f, 1.00f, 0.0f }, 1.00f },
 
     //                                        drive char  bias  tone
-    { "TAPE",    AlgorithmKind::Saturation, { 0.28f, 0.10f, 0.50f, 0.45f, 0.0f, 0.0f } },
-    { "TUBE",    AlgorithmKind::Saturation, { 0.34f, 0.22f, 0.62f, 0.72f, 0.0f, 0.0f } },
-    { "DRIVE",   AlgorithmKind::Saturation, { 0.55f, 0.55f, 0.50f, 0.80f, 0.0f, 0.0f } },
-    { "CRUSH",   AlgorithmKind::Saturation, { 0.82f, 0.92f, 0.50f, 0.90f, 0.0f, 0.0f } },
+    { "TAPE",    AlgorithmKind::Saturation, { 0.28f, 0.10f, 0.50f, 0.45f, 0.0f, 0.0f }, 1.00f },
+    { "TUBE",    AlgorithmKind::Saturation, { 0.34f, 0.22f, 0.62f, 0.72f, 0.0f, 0.0f }, 1.00f },
+    { "DRIVE",   AlgorithmKind::Saturation, { 0.55f, 0.55f, 0.50f, 0.80f, 0.0f, 0.0f }, 1.00f },
+    { "CRUSH",   AlgorithmKind::Saturation, { 0.82f, 0.92f, 0.50f, 0.90f, 0.0f, 0.0f }, 1.00f },
 };
 
 } // namespace

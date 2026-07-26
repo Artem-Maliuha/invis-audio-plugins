@@ -192,6 +192,7 @@ private:
     // Restoring writes to the chart, which reports a change, which would write straight back over
     // the state being restored. One flag, because the loop is one call deep.
     bool restoringChart { false };
+    bool pushingToEngine { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ConstellationWorkspace)
 };
