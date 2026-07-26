@@ -58,13 +58,16 @@ public:
         if (isSeparator)
         {
             idealWidth = 60;
-            idealHeight = 9;
+            idealHeight = 7;
             return;
         }
 
-        const auto font = InvisFonts::getDisplayFont(11.0f);
-        idealWidth = juce::GlyphArrangement::getStringWidthInt(font, text) + kSwatchColumn + 3 * kPadding;
-        idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : 24;
+        // TIGHT. A list of eight one-word choices does not need a row of chassis furniture each -
+        // the taller it is, the further the cursor has to travel to reach what it came for, and
+        // the more of the chart the menu covers while you decide.
+        const auto font = InvisFonts::getDisplayFont(kFontSize);
+        idealWidth = juce::GlyphArrangement::getStringWidthInt(font, text) + kSwatchColumn + 2 * kPadding;
+        idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : kItemHeight;
     }
 
     void drawPopupMenuSectionHeader(juce::Graphics& g, const juce::Rectangle<int>& area,
@@ -73,11 +76,11 @@ public:
         const auto theme = InvisTheme::getGlobalDefault();
         auto r = area.toFloat().reduced(static_cast<float>(kPadding), 0.0f);
 
-        g.setFont(InvisFonts::getDisplayFont(9.0f, false));
+        g.setFont(InvisFonts::getDisplayFont(8.5f, false));
         g.setColour(theme.textSecondary.withAlpha(0.55f));
-        g.drawText(sectionName, r, juce::Justification::centredLeft, false);
+        g.drawText(sectionName, r.withTrimmedBottom(3.0f), juce::Justification::centredLeft, false);
 
-        const float rule = r.getBottom() - 2.0f;
+        const float rule = r.getBottom() - 1.0f;
         g.setColour(juce::Colours::white.withAlpha(0.07f));
         g.drawLine(r.getX(), rule, r.getRight(), rule, 1.0f);
     }
@@ -91,7 +94,7 @@ public:
         juce::ignoreUnused(shortcutKeyText, icon);
 
         const auto theme = InvisTheme::getGlobalDefault();
-        auto r = area.toFloat().reduced(static_cast<float>(kPadding) * 0.5f, 1.0f);
+        auto r = area.toFloat().reduced(static_cast<float>(kPadding) * 0.5f, 0.5f);
 
         if (isSeparator)
         {
@@ -143,7 +146,7 @@ public:
             g.drawLine(c.x - 1.0f, c.y + 3.0f, c.x + 4.0f, c.y - 3.5f, 1.6f);
         }
 
-        g.setFont(InvisFonts::getDisplayFont(11.0f));
+        g.setFont(InvisFonts::getDisplayFont(kFontSize));
         g.setColour(isActive ? (isHighlighted ? juce::Colours::white
                                               : theme.textPrimary.withAlpha(0.88f))
                              : theme.textSecondary.withAlpha(0.35f));
@@ -166,8 +169,10 @@ public:
     }
 
 private:
-    static constexpr int kPadding = 8;
-    static constexpr int kSwatchColumn = 18;
+    static constexpr int   kPadding     = 6;
+    static constexpr int   kSwatchColumn = 16;
+    static constexpr int   kItemHeight   = 19;
+    static constexpr float kFontSize     = 10.5f;
 };
 
 } // namespace invis::ui

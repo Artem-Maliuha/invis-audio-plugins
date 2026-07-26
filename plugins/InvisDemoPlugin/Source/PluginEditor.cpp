@@ -108,6 +108,23 @@ InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
     };
     addAndMakeVisible(lpfKnob);
 
+    // A star can be created from three places and could be got rid of from none of them. The chart
+    // has no room for a destructive target - everything there is a drag handle - so it lives here,
+    // at the bottom of the panel that is already about this one star.
+    deleteButton.setButtonSize(invis::ui::InvisButtonSize::XS);
+    deleteButton.setLabel("DELETE");
+    deleteButton.setLedVisible(false);
+    deleteButton.setToggleMode(false);
+    deleteButton.setLedColour(juce::Colour::fromRGB(255, 23, 68));
+    deleteButton.onClick = [this]() {
+        if (index < 0) return;
+
+        const int doomed = index;
+        showFor(-1);                       // let go BEFORE the thing goes away
+        owner.constellation.removeNode(doomed);
+    };
+    addAndMakeVisible(deleteButton);
+
     // Colour picking is out for now: the effect already carries its colour, so the swatch row was
     // a second way to say the same thing - and the one that could disagree with it.
 }
@@ -144,7 +161,8 @@ void InvisDemoPluginEditor::StarPanel::showFor(int starIndex)
                      static_cast<juce::Component*>(&sensitivityKnob),
                      static_cast<juce::Component*>(&dryWetKnob),
                      static_cast<juce::Component*>(&hpfKnob),
-                     static_cast<juce::Component*>(&lpfKnob) })
+                     static_cast<juce::Component*>(&lpfKnob),
+                     static_cast<juce::Component*>(&deleteButton) })
         c->setVisible(has);
 
     refreshFromNode();
@@ -229,18 +247,18 @@ void InvisDemoPluginEditor::StarPanel::resized()
     pair(area.removeFromTop(knobH), sensitivityKnob, dryWetKnob);
     area.removeFromTop(layout::kGapRelated);
     pair(area.removeFromTop(knobH), hpfKnob, lpfKnob);
+
+    // Bottom of the panel, well clear of the controls: the one irreversible key here must not sit
+    // in the run of things you reach for while dialling.
+    area.removeFromBottom(20);
+    deleteButton.setBoundsCentredIn(area.removeFromBottom(deleteButton.getIntrinsicSize().y));
 }
 
-// ================================ CHART PANEL =================================================
+// ================================ SKY TOOLS ===================================================
 
-InvisDemoPluginEditor::ChartPanel::ChartPanel(InvisDemoPluginEditor& o) : owner(o)
+InvisDemoPluginEditor::SkyTools::SkyTools(InvisDemoPluginEditor& o) : owner(o)
 {
-    randomiseButton.setButtonSize(invis::ui::InvisButtonSize::S);
-    randomiseButton.setLabel("RANDOM");
-    randomiseButton.setLedVisible(false);
-    randomiseButton.setToggleMode(false);
-    randomiseButton.onClick = [this]() { owner.constellation.randomise(); };
-    addAndMakeVisible(randomiseButton);
+    setAlpha(kRestAlpha);
 
     channelModeCell.setLabel({});
     channelModeCell.setPopupMode(true);
@@ -250,30 +268,36 @@ InvisDemoPluginEditor::ChartPanel::ChartPanel(InvisDemoPluginEditor& o) : owner(
         owner.constellation.setChannelMode(static_cast<invis::ui::ConstellationChannelMode>(index));
     };
     addAndMakeVisible(channelModeCell);
+
+    // Straight to a star, no menu. Deciding what each one is comes later; getting something on the
+    // sky to push around is a different intent, and pairing it with a list to read every time is
+    // what makes trying things out feel expensive.
+    addRandomButton.setButtonSize(invis::ui::InvisButtonSize::XS);
+    addRandomButton.setLabel("+ STAR");
+    addRandomButton.setLedVisible(false);
+    addRandomButton.setToggleMode(false);
+    addRandomButton.onClick = [this]() { owner.addRandomStar(); };
+    addAndMakeVisible(addRandomButton);
+
+    randomiseButton.setButtonSize(invis::ui::InvisButtonSize::XS);
+    randomiseButton.setLabel("RANDOM");
+    randomiseButton.setLedVisible(false);
+    randomiseButton.setToggleMode(false);
+    randomiseButton.onClick = [this]() { owner.constellation.randomise(); };
+    addAndMakeVisible(randomiseButton);
 }
 
-void InvisDemoPluginEditor::ChartPanel::paint(juce::Graphics& g)
-{
-    StarPanel::paintPanelShell(g, getLocalBounds().toFloat(), "CHART");
-
-    const auto theme = invis::ui::InvisTheme::getGlobalDefault();
-    g.setColour(theme.textSecondary.withAlpha(0.40f));
-    g.setFont(invis::ui::InvisFonts::getDisplayFont(8.5f, false));
-    g.drawText("CLICK EMPTY SKY TO ADD",
-               getLocalBounds().toFloat().removeFromBottom(20.0f).reduced(10.0f, 0.0f),
-               juce::Justification::centred, false);
-}
-
-void InvisDemoPluginEditor::ChartPanel::resized()
+void InvisDemoPluginEditor::SkyTools::resized()
 {
     using namespace invis::ui;
 
-    auto area = getLocalBounds().reduced(10);
-    area.removeFromTop(kPanelHeadingHeight + layout::kGapRelated);
+    auto area = getLocalBounds();
 
-    channelModeCell.setBounds(area.removeFromTop(24));
-    area.removeFromTop(layout::kGapRelated);
-    randomiseButton.setBoundsCentredIn(area.removeFromTop(randomiseButton.getIntrinsicSize().y));
+    randomiseButton.setBoundsCentredIn(area.removeFromRight(randomiseButton.getIntrinsicSize().x));
+    area.removeFromRight(layout::kGapBonded);
+    addRandomButton.setBoundsCentredIn(area.removeFromRight(addRandomButton.getIntrinsicSize().x));
+    area.removeFromRight(layout::kGapRelated);
+    channelModeCell.setBounds(area.removeFromRight(54));
 }
 
 // ==============================================================================================
@@ -363,7 +387,7 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
         pushChartToState();
     };
 
-    workspace.addAndMakeVisible(chartPanel);
+    workspace.addAndMakeVisible(skyTools);
 
     // LAST: every child now exists and carries its final size preset, so the first layout pass
     // can read correct intrinsic sizes.
@@ -476,9 +500,18 @@ void InvisDemoPluginEditor::pullChartFromState()
 
     // The channel mode came back with the chart, so the control that sets it has to come back too
     // - otherwise the observer says M+S while the panel still reads L+R.
-    chartPanel.channelModeCell.setSelectedIndex(static_cast<int>(constellation.getChannelMode()),
+    skyTools.channelModeCell.setSelectedIndex(static_cast<int>(constellation.getChannelMode()),
                                                 juce::dontSendNotification);
     starPanel.showFor(-1);
+}
+
+void InvisDemoPluginEditor::addRandomStar()
+{
+    const int slot = juce::Random::getSystemRandom().nextInt(kNumEffects);
+    const auto& choice = kEffectCatalogue[slot];
+
+    if (const int index = constellation.addNode(choice.name, choice.colour); index >= 0)
+        starPanel.showFor(index);
 }
 
 void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> at)
@@ -499,8 +532,8 @@ void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> a
     // whether it landed there.
     menu.setLookAndFeel(&popupLook);
 
-    auto options = juce::PopupMenu::Options().withMinimumWidth(150)
-                                             .withStandardItemHeight(24);
+    auto options = juce::PopupMenu::Options().withMinimumWidth(132)
+                                             .withStandardItemHeight(19);
 
     if (at.has_value())
     {
@@ -511,7 +544,7 @@ void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> a
     }
     else
     {
-        options = options.withTargetComponent(&chartPanel);
+        options = options.withTargetComponent(&skyTools);
     }
 
     // Dismissing adds NOTHING. Picking the effect is the act of creating the star, so backing out
@@ -549,10 +582,14 @@ void InvisDemoPluginEditor::layoutWorkspace()
     starPanel.setBounds(inspectorColumn.removeFromTop(kStarPanelHeight));
     inspectorColumn.removeFromTop(layout::kGapGroup);
 
-    chartPanel.setBounds(inspectorColumn.removeFromTop(kChartPanelHeight));
-
     // NOTHING ABOVE THE SKY. The chart starts at the top of the workspace and simply is the
-    // field - it has no frame any more, so anything parked over it would read as a lid on it.
+    // field - its tools float ON it rather than sitting in a row that would read as a lid.
     const auto padSize = constellation.getIntrinsicSize();
     constellation.setBoundsCentredIn(area.removeFromTop(padSize.y));
+
+    skyTools.setBounds(constellation.getBounds()
+                           .removeFromTop(kSkyToolsHeight + 2 * layout::kGapRelated)
+                           .removeFromRight(kSkyToolsWidth + layout::kGapRelated)
+                           .reduced(layout::kGapRelated));
+    skyTools.toFront(false);
 }

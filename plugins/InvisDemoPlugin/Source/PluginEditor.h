@@ -56,6 +56,9 @@ private:
 
     void layoutWorkspace();
 
+    /** One star, straight to the sky, effect picked for you. */
+    void addRandomStar();
+
     /** Offers the catalogue, and only creates the star once something is chosen. */
     void chooseEffectThen(std::optional<juce::Point<float>> at);
 
@@ -78,27 +81,34 @@ private:
     invis::ui::InvisConstellation constellation;
 
     /**
-     * A TITLED PANEL, like the inspector beside it.
+     * TOOLS ON THE GLASS, not furniture around it.
      *
-     * These controls used to float in a bare row above the chart, which put furniture between the
-     * sky and the top of the workspace and gave the field a lid. The right column already reads as
-     * "things about the chart"; they belong there, under a heading, with everything else.
+     * These belong to the chart, so a titled panel off to the side made you leave the field to
+     * reach them - and a bare row above it gave the sky a lid. Floating them over the corner keeps
+     * them within reach of the thing they act on while costing the chart no room at all: they sit
+     * back at low opacity and come forward when the cursor arrives.
      */
-    struct ChartPanel : juce::Component {
-        explicit ChartPanel(InvisDemoPluginEditor& o);
-        void paint(juce::Graphics& g) override;
+    struct SkyTools : juce::Component {
+        explicit SkyTools(InvisDemoPluginEditor& o);
         void resized() override;
 
+        void mouseEnter(const juce::MouseEvent&) override { setAlpha(1.0f); }
+        void mouseExit(const juce::MouseEvent&) override  { setAlpha(kRestAlpha); }
+
+        static constexpr float kRestAlpha = 0.42f;
+
         InvisDemoPluginEditor& owner;
-        invis::ui::InvisButton randomiseButton;
         invis::ui::InvisCellSelector channelModeCell;
+        invis::ui::InvisButton addRandomButton;
+        invis::ui::InvisButton randomiseButton;
     };
 
     /** The chassis's own dropdown - a menu here is part of the instrument, not of the host. */
     invis::ui::InvisPopupLookAndFeel popupLook;
 
-    ChartPanel chartPanel { *this };
-    static constexpr int kChartPanelHeight = 108;
+    SkyTools skyTools { *this };
+    static constexpr int kSkyToolsHeight = 22;
+    static constexpr int kSkyToolsWidth  = 236;
 
     /**
      * Inspector for one star. Lives in the PLUGIN, not in the atom: choosing which effect a star
@@ -127,6 +137,7 @@ private:
         invis::ui::InvisKnob dryWetKnob;
         invis::ui::InvisKnob hpfKnob;
         invis::ui::InvisKnob lpfKnob;
+        invis::ui::InvisButton deleteButton;
     };
 
     // ALWAYS PRESENT, top right of the workspace. It used to float over the chart and appear only
@@ -134,7 +145,7 @@ private:
     // chart jump about under the cursor. A prepared panel outside the field just fills in.
     StarPanel starPanel { *this };
     static constexpr int kStarPanelWidth  = 200;
-    static constexpr int kStarPanelHeight = 300;
+    static constexpr int kStarPanelHeight = 330;
 
     PanelTheme currentPanelTheme { PanelTheme::DarkSlateCharcoal };
 
