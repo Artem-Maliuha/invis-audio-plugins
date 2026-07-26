@@ -58,8 +58,15 @@ public:
     void setFilters(float hpfNormalized, float lpfNormalized);
     void setDryWet(float mix) { dryWet = juce::jlimit(0.0f, 1.0f, mix); }
 
-    /** In place, one channel. `gain` is how much of the incoming signal the star is fed. */
-    void process(float* samples, int numSamples, float gain);
+    /**
+     * In place, one channel, AT UNITY.
+     *
+     * The slot does not know how much of it you are hearing - that is the chart's business, and it
+     * belongs to the engine's crossfade rather than to a gain in here. Scaling the block's own
+     * input by the chart amount turned proximity into a VOLUME on the whole path: walk away and the
+     * source itself faded out, walk up and the effect appeared at once instead of blending in.
+     */
+    void process(float* samples, int numSamples);
 
     bool isReady() const { return effect != nullptr; }
 

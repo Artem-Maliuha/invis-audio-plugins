@@ -160,7 +160,7 @@ void InvisEffectSlot::setFilters(float hpfNormalized, float lpfNormalized)
                    modules::FilterSlope::Slope12, false);
 }
 
-void InvisEffectSlot::process(float* samples, int numSamples, float gain)
+void InvisEffectSlot::process(float* samples, int numSamples)
 {
     if (effect == nullptr || numSamples <= 0) return;
 
@@ -169,10 +169,7 @@ void InvisEffectSlot::process(float* samples, int numSamples, float gain)
 
     // THE DRY TAP, TAKEN FIRST. Everything below only shapes the copy that feeds the algorithm.
     for (int i = 0; i < numSamples; ++i)
-        dryScratch[static_cast<size_t>(i)] = samples[i] * gain;
-
-    for (int i = 0; i < numSamples; ++i)
-        samples[i] *= gain;
+        dryScratch[static_cast<size_t>(i)] = samples[i];
 
     juce::AudioBuffer<float> view(&samples, 1, numSamples);
 

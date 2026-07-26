@@ -99,6 +99,7 @@ void InvisConstellationEngine::runStream(float* samples, int numSamples,
         if (s.count <= 0) continue;
 
         juce::FloatVectorOperations::clear(sum, numSamples);
+        float sent = 0.0f;
 
         // PARALLEL WITHIN A STAGE. Each member gets a COPY of what arrived - it is a send, not a
         // hand-off - and the outputs add. Feeding them in series here would quietly turn every
@@ -112,13 +113,22 @@ void InvisConstellationEngine::runStream(float* samples, int numSamples,
             if (slot == nullptr || !slot->isReady()) continue;
 
             juce::FloatVectorOperations::copy(stage, samples, numSamples);
-            slot->process(stage, numSamples, entry.gain);
-            juce::FloatVectorOperations::add(sum, stage, numSamples);
+            slot->process(stage, numSamples);
+            juce::FloatVectorOperations::addWithMultiply(sum, stage, entry.gain, numSamples);
+
+            sent += entry.gain;
         }
 
-        // The stage's output becomes the next stage's input. Hops between stages are full sends -
-        // the gains live on the entries, where the chart put them.
-        juce::FloatVectorOperations::copy(samples, sum, numSamples);
+        // A SEND, NOT A FADER. The chart amount decides how much of this stage you HEAR, so what
+        // is not sent stays as it arrived: the effect blends in as the observer approaches instead
+        // of the whole path getting quieter as it walks away.
+        //
+        // At a full send - which is what every hop between stages is - nothing is kept and the
+        // stage output is purely what it produced, exactly as the routing law says.
+        const float keep = 1.0f - juce::jlimit(0.0f, 1.0f, sent);
+
+        juce::FloatVectorOperations::multiply(samples, keep, numSamples);
+        juce::FloatVectorOperations::add(samples, sum, numSamples);
     }
 }
 
