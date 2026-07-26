@@ -95,6 +95,11 @@ void InvisButton::resized()
 
 void InvisButton::mouseDown(const juce::MouseEvent& e)
 {
+    // A DISABLED KEY DOES NOTHING. It looked disabled and still fired: JUCE leaves enablement to
+    // the component, and a key that reports "you cannot do this" and then does it is worse than
+    // one that never claimed to be off.
+    if (!isEnabled()) return;
+
     if (e.mods.isPopupMenu())
     {
         if (onSecondaryClick != nullptr)
@@ -108,6 +113,7 @@ void InvisButton::mouseDown(const juce::MouseEvent& e)
 
 void InvisButton::mouseUp(const juce::MouseEvent& e)
 {
+    if (!isEnabled()) return;
     if (e.mods.isPopupMenu()) return;
 
     isPressed = false;
@@ -140,6 +146,10 @@ void InvisButton::paint(juce::Graphics& g)
 
     const bool lit = toggleState || blinking;
     const auto ledColour = dangerous ? juce::Colour::fromRGB(255, 23, 68) : getLedColour();
+
+    // Sunk into the panel rather than greyed out: an unavailable key on a machined chassis reads as
+    // a key that is not fitted, which is exactly what it means here.
+    if (!isEnabled()) g.setOpacity(0.35f);
     const float lum = ledBallistics.getCurrentLuminance();
 
     // 1. Carved key seat: the chassis recess the key sits in

@@ -80,6 +80,8 @@ public:
      * reflex, so it wears the warning at rest - not on hover, not once pressed - and the caption
      * carries it too, because the rim alone reads as decoration.
      */
+    void enablementChanged() override { repaint(); }
+
     void setDangerous(bool shouldWarn) { dangerous = shouldWarn; repaint(); }
     bool isDangerous() const { return dangerous; }
     void clearLedColour() { customLedColour.reset(); repaint(); }

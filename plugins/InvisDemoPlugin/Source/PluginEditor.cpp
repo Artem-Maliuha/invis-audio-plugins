@@ -108,32 +108,19 @@ InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
     deleteButton.setLedVisible(false);
     deleteButton.setToggleMode(false);
     deleteButton.setDangerous(true);
+    // NO CONFIRMATION. It was added because removing a star also takes its links, which rewires
+    // whatever it was part of - but a dialog is the wrong answer to that. It taxes every deletion,
+    // including the fourteen you make while trying things out, to insure against the rare one you
+    // regret; and a prompt you dismiss by reflex protects nothing anyway. The honest fix for "the
+    // chart cannot hand it back" is undo, not a question.
+    //
+    // The key keeps its warning colour: that costs nothing and is read before the click, not after.
     deleteButton.onClick = [this]() {
         if (index < 0) return;
 
-        // ASKS FIRST. Removing a star takes its links with it, which silently rewires whatever it
-        // was part of - a chain becomes two, a closed figure opens - and none of that is anything
-        // an undo-less chart can hand back.
-        const auto& node = owner.constellation.getNode(index);
-
-        juce::PopupMenu menu;
-        menu.addSectionHeader("DELETE " + node.label.toUpperCase() + "?");
-        menu.addItem(1, "Delete this star");
-        menu.addItem(2, "Cancel");
-
-        menu.setLookAndFeel(&owner.popupLook);
-        menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&deleteButton)
-                               .withMinimumWidth(150)
-                               .withStandardItemHeight(19),
-                           [this](int result)
-        {
-            if (result != 1 || index < 0) return;
-
-            const int doomed = index;
-            showFor(-1);                   // let go BEFORE the thing goes away
-            owner.constellation.removeNode(doomed);
-        });
+        const int doomed = index;
+        showFor(-1);                       // let go BEFORE the thing goes away
+        owner.constellation.removeNode(doomed);
     };
     addAndMakeVisible(deleteButton);
 
@@ -322,7 +309,7 @@ InvisDemoPluginEditor::SkyTools::SkyTools(InvisDemoPluginEditor& o) : owner(o)
 
     // The captions carry the verb now, so the keys carry only the noun: "ADD: STAR" rather than
     // "+ STAR" sitting under a heading that already said add.
-    key(addStarButton,   "STAR",   [this]() { owner.chooseEffectThen({}); });
+    key(addStarButton,   "STAR",   [this]() { owner.chooseEffectThen({}, &addStarButton); });
     key(addRandomButton, "RANDOM", [this]() { owner.addRandomStar(); });
 
     // Two shufflers, because they shuffle different things. One rebuilds the INSTRUMENT - where
@@ -339,6 +326,20 @@ InvisDemoPluginEditor::SkyTools::SkyTools(InvisDemoPluginEditor& o) : owner(o)
     // Children included: without this the panel never hears about the cursor arriving on a key.
     addMouseListener(this, true);
     updateAlpha();
+    refreshLimit();
+}
+
+void InvisDemoPluginEditor::SkyTools::refreshLimit()
+{
+    // The keys going quiet is the whole notice here. How much room is left is said calmly at the
+    // foot of the chart instead - see InvisConstellation - because a counter in the toolbar turns
+    // a generous ceiling into something you feel you are spending.
+    const bool room = owner.constellation.getNumNodes()
+                    < invis::ui::InvisConstellation::kMaxNodes;
+
+    addStarButton.setEnabled(room);
+    addRandomButton.setEnabled(room);
+    repaint();
 }
 
 int InvisDemoPluginEditor::SkyTools::getRequiredWidth() const
@@ -518,6 +519,7 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     // Randomising rebuilds the chart, so whatever the inspector was holding is gone with it.
     constellation.onGeometryChanged = [this]() {
         if (starPanel.index >= constellation.getNumNodes()) starPanel.showFor(-1);
+        skyTools.refreshLimit();
         pushChartToState();
     };
 
@@ -648,7 +650,8 @@ void InvisDemoPluginEditor::addRandomStar()
         starPanel.showFor(index);
 }
 
-void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> at)
+void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> at,
+                                             juce::Component* anchor)
 {
     juce::PopupMenu menu;
 
@@ -689,7 +692,11 @@ void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> a
     }
     else
     {
-        options = options.withTargetComponent(&skyTools);
+        // The KEY that asked, not the row it lives in. Anchoring to the row put the list under its
+        // left end, which is a different place from the button you actually pressed.
+        options = options.withTargetComponent(anchor != nullptr
+                                                  ? anchor
+                                                  : static_cast<juce::Component*>(&skyTools));
     }
 
     // Dismissing adds NOTHING. Picking the effect is the act of creating the star, so backing out

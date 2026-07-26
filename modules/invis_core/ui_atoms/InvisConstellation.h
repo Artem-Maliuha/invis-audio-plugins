@@ -275,7 +275,23 @@ public:
     InvisConstellation();
     ~InvisConstellation() override = default;
 
-    static constexpr int kMaxNodes = 8;
+    /**
+     * How many stars a chart may hold.
+     *
+     * Three ceilings meet near here and the lowest of them wins:
+     *
+     *   THE FIGURE. Real constellation figures - the stick figures this chart is named after -
+     *   run to roughly fifteen or twenty stars at the largest, and the long ones (Eridanus, Hydra,
+     *   Draco) are exactly the ones nobody can trace at a glance. Past that you stop seeing a
+     *   figure and start seeing a cloud, which is the one thing this editor exists to prevent.
+     *
+     *   THE DSP. A star is an effect INSTANCE, and dual-observer modes need one per stream. Sixteen
+     *   is already thirty-two reverbs.
+     *
+     *   THE COLOUR. Families mix on the hue wheel; a cluster of twenty mixed members averages to
+     *   something that says nothing about what is in it.
+     */
+    static constexpr int kMaxNodes = 16;
     // How far a star can be heard from, at the ends of its sensitivity travel. Half sensitivity
     // lands on the radius every star used to carry, so a resting chart looks as it always did.
     static constexpr float kMinReach = 0.07f;

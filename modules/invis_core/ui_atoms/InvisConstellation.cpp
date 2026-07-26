@@ -1004,12 +1004,13 @@ bool InvisConstellation::isFreeSky(juce::Point<float> p) const
     juce::Point<float> onLink;
     if (hitTestLink(p, onLink) >= 0) return false;
 
-    // And clear of every star's REACH, not merely of the stars. Offering a spot inside an aura
-    // would put a new star inside somebody else's field, where it is neither free nor separate.
-    const auto here = toNormalized(p);
-    for (const auto& node : nodes)
-        if (here.getDistanceFrom(node.position) < getReach(node) * 0.92f) return false;
-
+    // AN AURA IS LIGHT, NOT FURNITURE. This used to refuse any spot inside a star's reach, on the
+    // reasoning that a new star would land inside somebody else's field - but overlapping fields
+    // are the whole point of the chart, and with reach turned up the fields cover everything, so
+    // the offer simply vanished and there was nowhere left to click at all.
+    //
+    // What is guarded above is what you could ACT on: a core, a collar, the observer, a line. The
+    // offer must never steal a target. It has no business avoiding a glow.
     return true;
 }
 
@@ -2133,17 +2134,28 @@ void InvisConstellation::paintGhostNode(juce::Graphics& g)
     const auto m = getMetrics(padSize);
     const auto theme = getEffectiveTheme();
 
-    // AN EMPTY SKY HAS TO SAY SO. Until the first star exists there is nothing on screen to hover,
-    // so the offer that appears under the cursor can never introduce itself - you would have to
-    // already suspect the field was clickable to discover that it is.
-    if (nodes.empty())
-    {
-        g.setFont(InvisFonts::getDisplayFont(m.labelFontSize * 0.9f, false));
-        g.setColour(theme.textSecondary.withAlpha(0.32f));
-        g.drawText("CLICK SOMEWHERE TO ADD A NEW STAR",
-                   getPadArea().withSizeKeepingCentre(getPadArea().getWidth(), 16.0f),
-                   juce::Justification::centred, false);
-    }
+    // HOW MUCH SKY IS LEFT, said quietly at the foot of the chart.
+    //
+    // An empty sky in particular has to speak: until the first star exists there is nothing on
+    // screen to hover, so the offer that appears under the cursor can never introduce itself - you
+    // would have to already suspect the field was clickable to discover that it is.
+    //
+    // NO WARNING COLOUR, not even when full. A ceiling of sixteen is generous, and a line that
+    // turns red the moment you reach it makes a limit you were never going to feel into something
+    // that feels like a failure. The keys going quiet is enough; this only says why.
+    const int used = static_cast<int>(nodes.size());
+    const int left = kMaxNodes - used;
+
+    const juce::String note =
+        used == 0  ? juce::String("CLICK ANYWHERE TO ADD YOUR FIRST STAR")
+      : left == 0  ? juce::String("THIS SKY IS FULL - REMOVE A STAR TO MAKE ROOM")
+      : left == 1  ? juce::String("YOU CAN ADD ONE STAR MORE")
+                   : "YOU CAN ADD " + juce::String(left) + " STARS MORE";
+
+    g.setFont(InvisFonts::getDisplayFont(m.labelFontSize * 0.85f, false));
+    g.setColour(theme.textSecondary.withAlpha(used == 0 ? 0.40f : 0.26f));
+    g.drawText(note, getPadArea().removeFromBottom(18.0f).reduced(8.0f, 0.0f),
+               juce::Justification::centred, false);
 
     if (static_cast<int>(nodes.size()) >= kMaxNodes) return;
 

@@ -59,8 +59,13 @@ private:
     /** One star, straight to the sky, effect picked for you. */
     void addRandomStar();
 
-    /** Offers the catalogue, and only creates the star once something is chosen. */
-    void chooseEffectThen(std::optional<juce::Point<float>> at);
+    /**
+     * Offers the catalogue, and only creates the star once something is chosen.
+     *
+     * `anchor` is the control that asked. Without it the menu hangs off whatever component happens
+     * to own the key - the whole tool row - and lands nowhere near the thing you pressed.
+     */
+    void chooseEffectThen(std::optional<juce::Point<float>> at, juce::Component* anchor = nullptr);
 
     /** Chart -> state tree, so compare slots and host save actually contain the instrument. */
     void pushChartToState();
@@ -109,6 +114,9 @@ private:
          * widths, so it is the only thing that can answer this correctly.
          */
         int getRequiredWidth() const;
+
+        /** Greys the ADD keys and updates the count once the chart is full. */
+        void refreshLimit();
 
         static constexpr float kRestAlpha = 0.42f;
         static constexpr int kChannelCellWidth = 54;
