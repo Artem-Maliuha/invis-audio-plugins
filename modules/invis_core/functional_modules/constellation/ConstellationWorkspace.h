@@ -78,13 +78,15 @@ private:
          * would do it again on the next rename - the row is built from intrinsic sizes and text
          * widths, so it is the only thing that can answer this correctly.
          */
-        int getRequiredWidth() const;
+        /** Width of the two-row layout; `singleRowWidth` reports what one row would need. */
+        int getRequiredWidth(int* singleRowWidth = nullptr) const;
 
         /** Greys the ADD keys and updates the count once the chart is full. */
         void refreshLimit();
 
         static constexpr float kRestAlpha = 0.42f;
         static constexpr int kChannelCellWidth = 54;
+        static constexpr int kSkyToolsRowHeight = 22;
 
         ConstellationWorkspace& owner;
         ui::InvisCellSelector channelModeCell;
@@ -95,7 +97,6 @@ private:
         ui::InvisButton shuffleObserverButton;
         ui::InvisButton deleteUnusedButton;
         ui::InvisButton deleteLinksButton;
-        ui::InvisButton deleteAllButton;
 
         // Filled by resized(), read by paint(): a caption sits beside the group it names, and only
         // the layout knows where that ended up.
@@ -106,11 +107,11 @@ private:
     ui::InvisPopupLookAndFeel popupLook;
 
     SkyTools skyTools { *this };
+    static constexpr int kSkyToolsHeight = 2 * SkyTools::kSkyToolsRowHeight + 4;
     // TWO ROWS. Four groups do not fit across the width of the sky, and a row that overruns just
     // clips its left end off. Splitting by intent - what you MAKE above, what you CHANGE below -
     // is a better division than wrapping wherever the pixels ran out.
-    static constexpr int kSkyToolsRowHeight = 22;
-    static constexpr int kSkyToolsHeight = 2 * kSkyToolsRowHeight + 4;
+
 
     /**
      * Inspector for one star. Lives in the PLUGIN, not in the atom: choosing which effect a star

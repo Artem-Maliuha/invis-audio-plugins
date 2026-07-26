@@ -36,7 +36,18 @@ public:
     static constexpr float kTrimDuration   = 3.00f;
 
     /** "Barely glowing green" on the filter lamp: ~1.4 dB of energy removed at a 24 dB scale. */
-    static constexpr float kMicroThreshold = 0.06f;
+    /**
+     * WHERE THE SWEEP STOPS - normalized against InputSidebarDSP::kMaxRemovedDb (24 dB).
+     *
+     * It was 0.06, which is 1.44 dB of removal. That is not a micro-trigger: by the time a
+     * 12 dB/oct filter has taken a decibel and a half out of the whole signal it is well inside
+     * material you can hear, which is why AUTO always landed too far in.
+     *
+     * 0.022 is about half a decibel - the first hint that the filter has touched anything, which
+     * is exactly what "sweep until it starts to bite" should mean. The detector had to learn about
+     * transients before this could be lowered: see InputSidebarDSP::PeakTap.
+     */
+    static constexpr float kMicroThreshold = 0.022f;
 
     /** Sweep endpoints in normalized knob space, held just clear of the OFF detents so the
         filters are actually engaged the whole way (an OFF filter removes nothing by definition

@@ -407,11 +407,10 @@ ConstellationWorkspace::SkyTools::SkyTools(ConstellationWorkspace& o) : owner(o)
     // rebuilding it. ALL is the fresh sky.
     key(deleteUnusedButton, "UNUSED",    [this]() { owner.constellation.removeUnusedStars(); });
     key(deleteLinksButton,  "RELATIONS", [this]() { owner.constellation.clearLinks(); });
-    key(deleteAllButton,    "ALL",       [this]() { owner.constellation.clearAll(); });
 
-    // Only ALL is marked. Three warning-coloured keys in a row would make the row shout and teach
-    // you to ignore the colour - this is the one that takes everything and cannot be undone.
-    deleteAllButton.setDangerous(true);
+    // No ALL. Wiping the chart in one click is not a tool you reach for while working - it is the
+    // one you hit by accident next to two you use constantly - and DELETE ALL STARS is what an
+    // empty preset is for.
 
     // Children included: without this the panel never hears about the cursor arriving on a key.
     addMouseListener(this, true);
@@ -432,7 +431,7 @@ void ConstellationWorkspace::SkyTools::refreshLimit()
     repaint();
 }
 
-int ConstellationWorkspace::SkyTools::getRequiredWidth() const
+int ConstellationWorkspace::SkyTools::getRequiredWidth(int* singleRowWidth) const
 {
     const auto font = ui::InvisFonts::getDisplayFont(8.0f, false);
     const auto caption = [&font](const juce::String& t)
@@ -453,8 +452,12 @@ int ConstellationWorkspace::SkyTools::getRequiredWidth() const
 
     const int erase = caption("DELETE:") + layout::kGapBonded
                     + deleteUnusedButton.getIntrinsicSize().x + layout::kGapBonded
-                    + deleteLinksButton.getIntrinsicSize().x + layout::kGapBonded
-                    + deleteAllButton.getIntrinsicSize().x;
+                    + deleteLinksButton.getIntrinsicSize().x;
+
+    const int single = mode + layout::kGapGroup + add + layout::kGapGroup
+                     + random + layout::kGapGroup + erase;
+
+    if (singleRowWidth != nullptr) *singleRowWidth = single;
 
     // The WIDER of the two rows, since they are right-aligned against the same edge.
     return std::max(mode + layout::kGapGroup + add,
@@ -491,9 +494,17 @@ void ConstellationWorkspace::SkyTools::resized()
     using namespace ui;
 
     auto full = getLocalBounds();
+
+    // ONE ROW WHEN IT FITS. Measured against the width actually handed over rather than decided in
+    // advance: shortening a label or dropping a key should collapse the row on its own, not wait
+    // for somebody to notice and change a constant.
+    int single = 0;
+    getRequiredWidth(&single);
+    const bool oneRow = single <= full.getWidth();
+
     auto top = full.removeFromTop(kSkyToolsRowHeight);
-    full.removeFromTop(4);
-    auto bottom = full.removeFromTop(kSkyToolsRowHeight);
+    if (!oneRow) full.removeFromTop(4);
+    auto bottom = oneRow ? top : full.removeFromTop(kSkyToolsRowHeight);
 
     auto* area = &bottom;
 
@@ -511,8 +522,6 @@ void ConstellationWorkspace::SkyTools::resized()
     { b.setBoundsCentredIn(area->removeFromRight(b.getIntrinsicSize().x)); };
 
     // BOTTOM ROW: what changes a chart you already have.
-    place(deleteAllButton);
-    area->removeFromRight(layout::kGapBonded);
     place(deleteLinksButton);
     area->removeFromRight(layout::kGapBonded);
     place(deleteUnusedButton);
@@ -529,7 +538,7 @@ void ConstellationWorkspace::SkyTools::resized()
     area->removeFromRight(layout::kGapBonded);
     randomCaption = captionSlot("RANDOMIZE:");
 
-    // TOP ROW: what puts something on the sky in the first place.
+    // TOP ROW: what puts something on the sky in the first place. Same row when it all fits.
     area = &top;
 
     place(addRandomButton);
@@ -556,9 +565,6 @@ ConstellationWorkspace::ConstellationWorkspace(dsp::InvisConstellationEngine& e,
     // THE CHART IS THE ROOM. A fixed square left a band of unused panel under it; the field is the
     // instrument, so it takes every pixel the workspace is not otherwise using.
     constellation.setPadSize(ui::InvisConstellationSize::L);
-    // Sized against the space it is GIVEN, not against a constant: the workspace is handed its
-    // bounds by the chassis, and a chart that guessed at them would drift the moment the frame did.
-    constellation.setPadDesignSize({ kWidth - kStarPanelWidth - ui::layout::kGapGroup, kHeight });
     // MOVING THE OBSERVER CHANGES THE ROUTE without touching the geometry: a different star becomes
     // the entry, and the whole chain renumbers behind it. Geometry callbacks alone would miss it.
     constellation.onWeightsChanged = [this](int, const std::vector<float>&) { pushChartToEngine(); };
@@ -778,11 +784,22 @@ void ConstellationWorkspace::layoutWorkspaceContent()
 
     // NOTHING ABOVE THE SKY. The chart starts at the top of the workspace and simply is the
     // field - its tools float ON it rather than sitting in a row that would read as a lid.
+    // THE CHART TAKES THE ROOM IT IS ACTUALLY GIVEN. Its design size was a constant, so the chart
+    // stayed 560 tall while the workspace grew to whatever the sidebars needed - a band of unused
+    // panel underneath, every time. It is asked for its size here, where the size is known.
+    if (!area.isEmpty()) constellation.setPadDesignSize({ area.getWidth(), area.getHeight() });
+
     constellation.setBoundsCentredIn(area);
 
+    // Given the FULL width of the chart, so it can decide for itself whether one row fits.
+    int single = 0;
+    const int twoRow = skyTools.getRequiredWidth(&single);
+    const bool oneRow = single + 3 * layout::kGapRelated <= constellation.getWidth();
+
     skyTools.setBounds(constellation.getBounds()
-                           .removeFromTop(kSkyToolsHeight + 2 * layout::kGapRelated)
-                           .removeFromRight(skyTools.getRequiredWidth() + 3 * layout::kGapRelated)
+                           .removeFromTop((oneRow ? SkyTools::kSkyToolsRowHeight : kSkyToolsHeight)
+                                          + 2 * layout::kGapRelated)
+                           .removeFromRight((oneRow ? single : twoRow) + 3 * layout::kGapRelated)
                            .reduced(layout::kGapRelated));
     skyTools.toFront(false);
 }

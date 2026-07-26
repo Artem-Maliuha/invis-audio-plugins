@@ -77,9 +77,20 @@ void InputSidebarDSP::reset()
 
     hpfLampLevel.store(0.0f, std::memory_order_relaxed);
     lpfLampLevel.store(0.0f, std::memory_order_relaxed);
+    prePeak.reset(); postHpfPeak.reset(); postLpfPeak.reset();
 
     peakL.store(0.0f, std::memory_order_relaxed);
     peakR.store(0.0f, std::memory_order_relaxed);
+}
+
+double InputSidebarDSP::computePeak(const juce::AudioBuffer<float>& buffer)
+{
+    float peak = 0.0f;
+
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        peak = std::max(peak, buffer.getMagnitude(ch, 0, buffer.getNumSamples()));
+
+    return static_cast<double>(peak);
 }
 
 double InputSidebarDSP::computeMeanSquare(const juce::AudioBuffer<float>& buffer)
@@ -125,6 +136,7 @@ void InputSidebarDSP::processBlock(juce::AudioBuffer<float>& buffer, juce::Audio
 
     // 2b. Energy tap BEFORE the filters - the reference the HPF stage is measured against
     preTap.push(computeMeanSquare(buffer), blockSeconds);
+    prePeak.push(computePeak(buffer), blockSeconds);
     const bool signalPresent = (preTap.getDb() > kEnergyGateDb);
 
     // 3. HPF Filter Update & Processing (Bypassed if <= 20.5 Hz)
@@ -137,6 +149,7 @@ void InputSidebarDSP::processBlock(juce::AudioBuffer<float>& buffer, juce::Audio
 
     // 3b. Energy removed by the HPF stage alone
     postHpfTap.push(computeMeanSquare(buffer), blockSeconds);
+    postHpfPeak.push(computePeak(buffer), blockSeconds);
 
     hpfEngaged.store(!isHpfOff, std::memory_order_relaxed);
     if (isHpfOff || !signalPresent)
@@ -146,7 +159,13 @@ void InputSidebarDSP::processBlock(juce::AudioBuffer<float>& buffer, juce::Audio
     }
     else
     {
-        const float removedDb = juce::jlimit(0.0f, kMaxRemovedDb, preTap.getDb() - postHpfTap.getDb());
+        // WHICHEVER NOTICES FIRST. Averaged power answers "how much of the sound is gone"; peak
+        // answers "did it take the edges off". A filter can be doing the second while the first
+        // barely moves, and that is precisely the case AUTO used to sweep straight past.
+        const float steady = preTap.getDb() - postHpfTap.getDb();
+        const float transient = prePeak.getDb() - postHpfPeak.getDb();
+
+        const float removedDb = juce::jlimit(0.0f, kMaxRemovedDb, std::max(steady, transient));
         hpfLampLevel.store(removedDb / kMaxRemovedDb, std::memory_order_relaxed);
     }
 
@@ -160,6 +179,7 @@ void InputSidebarDSP::processBlock(juce::AudioBuffer<float>& buffer, juce::Audio
 
     // 4b. Energy removed by the LPF stage alone - referenced to the POST-HPF signal
     postLpfTap.push(computeMeanSquare(buffer), blockSeconds);
+    postLpfPeak.push(computePeak(buffer), blockSeconds);
 
     lpfEngaged.store(!isLpfOff, std::memory_order_relaxed);
     if (isLpfOff || !signalPresent)
@@ -168,7 +188,10 @@ void InputSidebarDSP::processBlock(juce::AudioBuffer<float>& buffer, juce::Audio
     }
     else
     {
-        const float removedDb = juce::jlimit(0.0f, kMaxRemovedDb, postHpfTap.getDb() - postLpfTap.getDb());
+        const float steady = postHpfTap.getDb() - postLpfTap.getDb();
+        const float transient = postHpfPeak.getDb() - postLpfPeak.getDb();
+
+        const float removedDb = juce::jlimit(0.0f, kMaxRemovedDb, std::max(steady, transient));
         lpfLampLevel.store(removedDb / kMaxRemovedDb, std::memory_order_relaxed);
     }
 

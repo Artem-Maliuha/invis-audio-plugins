@@ -165,7 +165,11 @@ public:
                 combs[i].write(in + fed);
             }
 
-            x[s] = sum / static_cast<float>(kNumCombs);
+            // A REVERB HAS GAIN. Three combs feeding themselves back build up well past unity - the
+            // average across them is not enough, and measured it reached nearly twice the input at
+            // full feedback. Backed off by the build-up its own feedback implies, so turning the
+            // tail up lengthens it instead of also making it louder.
+            x[s] = sum * outputTrim;
         }
     }
 
@@ -193,6 +197,10 @@ private:
         // Hard ceiling below unity. The chart can drive several of these in series, and a feedback
         // that reaches 1.0 anywhere in that chain runs away with no user action to stop it.
         fbGain = juce::jlimit(0.0f, 0.94f, feedback * 0.94f);
+        // The coefficient is MEASURED, not guessed: at full feedback the three combs came to about
+        // 1.9x the input, so the divisor has to reach 1.92 there and 1.0 at no feedback. Guessing
+        // high, as I did first, makes turning the tail up quieter - the opposite fault.
+        outputTrim = 1.0f / (static_cast<float>(kNumCombs) * (1.0f + 0.98f * fbGain));
     }
 
     static constexpr int kNumCombs = 3;
@@ -207,7 +215,7 @@ private:
     float allpassSamples[kNumAllpass] { 0, 0, 0, 0 };
 
     float size { 0.5f }, feedback { 0.5f }, damping { 0.4f }, modulation { 0.2f }, spread { 0.6f };
-    float fbGain { 0.45f }, lfoPhase { 0.0f };
+    float fbGain { 0.45f }, lfoPhase { 0.0f }, outputTrim { 0.33f };
 };
 
 // =================================================================================================
@@ -246,7 +254,12 @@ public:
             // notches where positive peaks.
             case Feedback:
                 feedback = juce::jlimit(-0.85f, 0.85f, v * 1.70f - 0.85f);
+
+                // Both ends of the path. Trimming only the input still let the resonance build
+                // three times over: what a comb does to a steady tone is a gain, and it has to be
+                // paid for on the way out as well.
                 inputTrim = 1.0f - 0.55f * std::abs(feedback);
+                outputTrim = 1.0f / (1.0f + 1.6f * std::abs(feedback));
                 break;
             case Shape:    shape = v; break;
             default: break;
@@ -281,7 +294,7 @@ public:
             line.write(x[s] * inputTrim + lastOut * feedback);
             lastOut = delayed;
 
-            x[s] = delayed;
+            x[s] = delayed * outputTrim;
         }
     }
 
@@ -291,7 +304,7 @@ private:
 
     float rate { 0.8f }, depth { 0.5f }, baseMs { 8.0f }, feedback { 0.0f }, shape { 0.0f };
     float phase { 0.0f }, lastOut { 0.0f };
-    float inputTrim { 1.0f };
+    float inputTrim { 1.0f }, outputTrim { 1.0f };
 };
 
 // =================================================================================================
@@ -349,8 +362,14 @@ public:
             energy += static_cast<double>(v) * v;
         }
 
+        // AGAINST THE PROBE'S OWN RMS, not its amplitude. Comparing the output's RMS to 0.7071 -
+        // which is the probe's PEAK - asked the curve to hit a level 3 dB above what went in, so
+        // every saturated star handed the chain roughly double the signal. On a chart that can put
+        // several in series that is what turns "some effect" into "overloaded".
+        constexpr float kProbeRms = 0.7071f * 0.7071f;   // a sine's rms is its amplitude / sqrt(2)
+
         const float outRms = static_cast<float>(std::sqrt(energy / kProbe));
-        makeup = 0.7071f / std::max(0.05f, outRms);
+        makeup = kProbeRms / std::max(0.05f, outRms);
     }
 
     juce::Range<int> getParamRange() const override { return { 0, NumParams }; }

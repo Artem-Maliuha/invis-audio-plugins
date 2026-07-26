@@ -92,14 +92,43 @@ private:
         }
     };
 
+    /**
+     * PEAK tap, and the reason there has to be one.
+     *
+     * The mean-square taps above answer "how much energy is gone", which is the right question for
+     * a lamp and the wrong one for AUTO: a 15 ms attack on averaged power barely registers a click
+     * at all. So a filter eating the transients of a snare read as removing almost nothing, the
+     * sweep kept climbing, and it stopped only once it was deep into material you could hear.
+     *
+     * Fast up, slow down: a transient is exactly the thing you must not average away.
+     */
+    struct PeakTap {
+        double level { 0.0 };
+
+        void reset() { level = 0.0; }
+
+        void push(double blockPeak, double blockSeconds)
+        {
+            const double tc = (blockPeak > level) ? 0.001 : 0.250;
+            level += (blockPeak - level) * (1.0 - std::exp(-blockSeconds / tc));
+        }
+
+        float getDb() const
+        {
+            return level > 1.0e-6 ? static_cast<float>(20.0 * std::log10(level)) : -120.0f;
+        }
+    };
+
     static double computeMeanSquare(const juce::AudioBuffer<float>& buffer);
+    static double computePeak(const juce::AudioBuffer<float>& buffer);
 
     double sampleRate { 44100.0 };
     int numChannels { 2 };
 
     InvisLoudnessAnalyser analyser;
 
-    EnergyTap preTap;      // after input trim, before HPF
+    EnergyTap preTap;
+    PeakTap prePeak, postHpfPeak, postLpfPeak;      // after input trim, before HPF
     EnergyTap postHpfTap;  // after HPF  -> HPF lamp reference for the LPF stage
     EnergyTap postLpfTap;  // after LPF
 
