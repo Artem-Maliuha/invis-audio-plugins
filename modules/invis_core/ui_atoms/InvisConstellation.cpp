@@ -665,6 +665,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
         }
 
         std::vector<bool> reached(fig.clusters.size(), false);
+        std::vector<int> depth(fig.clusters.size(), 0);
         std::vector<int> queue { entryCluster };
         reached[static_cast<size_t>(entryCluster)] = true;
 
@@ -672,10 +673,16 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
         // nowhere else for the signal to go, so a gate ring there would be noise.
         const bool marksEntry = fig.clusters.size() > 1;
 
-        int order = 0;
         for (size_t head = 0; head < queue.size(); ++head)
         {
             const int ci = queue[head];
+
+            // ORDER IS DEPTH, NOT ARRIVAL. Numbering the clusters by the order they came off the
+            // queue turned a BRANCH into a chain: hang two stars off one and they were handed
+            // stages 1 and 2, so a split that should run side by side was described - and drawn,
+            // and pulsed - as one running after the other. What makes two stages the same stage is
+            // being the same number of hops from the entry.
+            const int order = depth[static_cast<size_t>(ci)];
             const auto& cl = fig.clusters[static_cast<size_t>(ci)];
             const bool isEntry = (ci == entryCluster);
             const float feed = isEntry ? arrival : 1.0f;   // hops between stages are 100%
@@ -733,12 +740,11 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                 }
             }
 
-            ++order;
-
             for (int nb : tree[static_cast<size_t>(ci)])
                 if (!reached[static_cast<size_t>(nb)])
                 {
                     reached[static_cast<size_t>(nb)] = true;
+                    depth[static_cast<size_t>(nb)] = order + 1;
                     queue.push_back(nb);
                 }
         }
@@ -777,18 +783,22 @@ ChartFrame InvisConstellation::takeSnapshot() const
             if (cl.parallel) frame.parallel.push_back(cl);
 
     // How many stages each star's figure has, so the pulse knows how long its round trip is.
-    frame.stages.assign(nodes.size(), 0);
-
-    for (const auto& fig : frame.figures)
+    // Worked out separately for each observer, because each one enters the figure in its own place.
+    for (size_t p = 0; p < frame.stages.size(); ++p)
     {
-        int last = -1;
-        for (int idx : fig.stars)
-            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-                last = std::max(last, frame.heard[0][static_cast<size_t>(idx)].chainOrder);
+        frame.stages[p].assign(nodes.size(), 0);
 
-        for (int idx : fig.stars)
-            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-                frame.stages[static_cast<size_t>(idx)] = last + 1;
+        for (const auto& fig : frame.figures)
+        {
+            int last = -1;
+            for (int idx : fig.stars)
+                if (idx >= 0 && idx < static_cast<int>(nodes.size()))
+                    last = std::max(last, frame.heard[p][static_cast<size_t>(idx)].chainOrder);
+
+            for (int idx : fig.stars)
+                if (idx >= 0 && idx < static_cast<int>(nodes.size()))
+                    frame.stages[p][static_cast<size_t>(idx)] = last + 1;
+        }
     }
 
     return frame;
@@ -833,14 +843,16 @@ void InvisConstellation::setChannelMode(ConstellationChannelMode mode)
 
 juce::Colour InvisConstellation::getObserverColour(int observerIndex) const
 {
-    const auto theme = getEffectiveTheme();
-
-    // The second observer is tinted so its beams can be told apart at a glance - with two of them
-    // every star grows two tethers, and undifferentiated ones would be unreadable.
+    // White against violet: the pair has to be readable at the size of a spark crossing a line,
+    // and two near-whites were not.
+    //
+    // It must also not collide with a STAR. The second observer used to fall back to the theme's
+    // secondary accent, which in practice was the exact amber a DELAY wears. This violet is kept
+    // lighter and softer than the catalogue's magenta so the two never read as the same object.
     if (observerIndex == 1)
-        return theme.accentSecondary.isTransparent() ? juce::Colour::fromRGB(255, 171, 0)
-                                                     : theme.accentSecondary;
+        return juce::Colour::fromRGB(170, 130, 255);   // violet
 
+    const auto theme = getEffectiveTheme();
     return theme.textPrimary;
 }
 
@@ -1030,10 +1042,15 @@ void InvisConstellation::insertNodeOnLink(int linkIndex, juce::Point<float> norm
 
 void InvisConstellation::tickAnimation(float dt)
 {
-    // THE CHART IS ALWAYS RUNNING. This used to stop the clock whenever nothing was loud enough,
-    // which meant the one thing the animation exists to show - how the chains you built are wired,
-    // and which way they run - was only visible while you happened to be standing close to them.
-    // What a chain DOES is true whether or not you are listening to it.
+    // Nothing reaching anything means nothing is moving, and now that the charge itself obeys that
+    // rule the clock may rest with it: an idle chart draws exactly the same picture on every frame.
+    bool anyFlow = false;
+    for (int p = 0; p < getNumObservers() && !anyFlow; ++p)
+        for (const auto& c : getContributions(p))
+            if (c.glow > 0.004f) { anyFlow = true; break; }
+
+    if (!anyFlow) return;
+
     flowPhase += dt;
     if (flowPhase > 1000.0f) flowPhase -= 1000.0f;
 
@@ -1069,6 +1086,15 @@ float InvisConstellation::stageFlash(int stages, int order) const
     while (age < 0.0) age += cycle;
 
     return static_cast<float>(std::exp(-age / kFlashDecay));
+}
+
+bool InvisConstellation::sendsCharge(const ChartFrame& frame, int observer, int star) const
+{
+    if (star < 0 || star >= static_cast<int>(nodes.size())) return false;
+
+    const auto& mine = frame.heard[static_cast<size_t>(observer)][static_cast<size_t>(star)];
+
+    return mine.chainOrder >= 0 && mine.glow > 0.004f;
 }
 
 void InvisConstellation::resized()
@@ -1758,9 +1784,15 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
 
     for (const auto& fig : figures)
     {
-        // Number of STAGES, which is what "series" counts now - a triangle with a star hung off it
-        // is two stages, not four.
-        if (fig.clusters.size() > 1)
+        // Number of STAGES, which is what "series" counts - a triangle with a star hung off it is
+        // two stages, not four, and two stars branching off one are ONE stage between them, not
+        // two. Counting clusters got the second case wrong.
+        int stages = 0;
+        for (int idx : fig.stars)
+            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
+                stages = std::max(stages, contribs[static_cast<size_t>(idx)].chainOrder + 1);
+
+        if (stages > 1)
         {
             // Placed over the serial members rather than the figure centre, so the caption never
             // lands on top of a cluster's own wash and label.
@@ -1769,8 +1801,7 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
                 if (!cl.parallel) loose.insert(loose.end(), cl.stars.begin(), cl.stars.end());
 
             const auto& at = loose.empty() ? fig.stars : loose;
-            sayRouting("SERIES " + juce::String(static_cast<int>(fig.clusters.size())),
-                       toPixels(figureCentroid(nodes, at)));
+            sayRouting("SERIES " + juce::String(stages), toPixels(figureCentroid(nodes, at)));
         }
 
         // Pushed clear of the shared hub, which sits on the very same centroid - the caption was
@@ -1794,9 +1825,14 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
         const auto& ca = contribs[static_cast<size_t>(l.a)];
         const auto& cb = contribs[static_cast<size_t>(l.b)];
 
-        // A line carries signal only when both ends are consecutive steps of the travelled path.
-        const bool carrying = ca.chainOrder >= 0 && cb.chainOrder >= 0
+        // A line carries signal only when both ends are consecutive steps of the travelled path AND
+        // something is actually travelling it. Wiring alone is not flow.
+        const bool adjacent = ca.chainOrder >= 0 && cb.chainOrder >= 0
                            && std::abs(ca.chainOrder - cb.chainOrder) == 1;
+
+        bool carrying = false;
+        for (int p = 0; p < getNumObservers() && adjacent && !carrying; ++p)
+            carrying = sendsCharge(frame, p, l.a) || sendsCharge(frame, p, l.b);
 
         const bool hovered = (static_cast<int>(i) == hoveredLink);
 
@@ -1841,16 +1877,21 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
             // A CLOSED CLUSTER IS ONE STAGE, so it does not pass a charge from star to star -
             // it all happens at once. The whole cage brightens on the beat instead, which is the
             // only honest picture of parallel: there is no order inside to depict.
-            int stages = 0, order = -1;
+            // Struck by whichever observer reaches it hardest: with two listeners a cluster can
+            // sit at a different depth in each of their chains, and the cage should ring for both.
+            float beat = 0.0f;
             for (int idx : owner->stars)
-                if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-                {
-                    stages = frame.stages[static_cast<size_t>(idx)];
-                    order = contribs[static_cast<size_t>(idx)].chainOrder;
-                    break;
-                }
+            {
+                if (idx < 0 || idx >= static_cast<int>(nodes.size())) continue;
 
-            const float beat = stageFlash(stages, order);
+                for (int p = 0; p < getNumObservers(); ++p)
+                    if (sendsCharge(frame, p, idx))
+                        beat = std::max(beat, stageFlash(
+                            frame.stages[static_cast<size_t>(p)][static_cast<size_t>(idx)],
+                            frame.heard[static_cast<size_t>(p)][static_cast<size_t>(idx)].chainOrder));
+
+                break;
+            }
 
             const float soft = (hovered ? 0.16f : 0.09f) + 0.10f * activity + 0.16f * beat;
             const float core = (hovered ? 0.62f : 0.34f) + 0.26f * activity + 0.40f * beat;
@@ -1885,19 +1926,34 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
             g.setColour(colour.withAlpha(0.55f * energy));
             g.drawLine(pa.x, pa.y, pb.x, pb.y, m.polygonStroke * 1.8f);
 
-            // ONE CHARGE, CROSSING ONCE. A dashed pattern crawling along the line said "flow"
-            // but never said WHERE the sound is, and its speed was set by the line's length -
-            // drag a star further away and the same hop appeared to take longer.
-            const auto from = (downstream == l.b) ? pa : pb;
-            const auto to = (downstream == l.b) ? pb : pa;
+            // ONE CHARGE PER OBSERVER, CROSSING ONCE. A dashed pattern crawling along the line
+            // said "flow" but never said WHERE the sound is, and its speed was set by the line's
+            // length - drag a star further away and the same hop appeared to take longer.
+            //
+            // Each observer numbers the chain from ITS OWN entry, so with a listener either side
+            // of a figure the two charges run in opposite directions and meet in the middle. That
+            // is not an effect: it is what those two listeners are actually doing.
+            for (int p = 0; p < getNumObservers(); ++p)
+            {
+                const auto& cp = frame.heard[static_cast<size_t>(p)];
+                const int oa = cp[static_cast<size_t>(l.a)].chainOrder;
+                const int ob = cp[static_cast<size_t>(l.b)].chainOrder;
 
-            const int stages = frame.stages[static_cast<size_t>(downstream)];
-            const int order = contribs[static_cast<size_t>(downstream)].chainOrder;
+                if (oa < 0 || ob < 0 || std::abs(oa - ob) != 1) continue;
+                if (!sendsCharge(frame, p, (oa > ob) ? l.a : l.b)) continue;
 
-            // Scaled by how audible the hop is, but never off: a quiet chain still has to say
-            // which way it runs. `energy` already carries a floor for exactly this reason.
-            if (const float t = pulseOnSegment(stages, order); t >= 0.0f)
-                drawSpark(g, from + (to - from) * t, colour, 2.6f, energy);
+                const int down = (oa > ob) ? l.a : l.b;
+                const auto from = (down == l.b) ? pa : pb;
+                const auto to   = (down == l.b) ? pb : pa;
+
+                // Scaled by how audible the hop is, but never off: a quiet chain still has to say
+                // which way it runs. `energy` already carries a floor for exactly this reason.
+                const int stages = frame.stages[static_cast<size_t>(p)][static_cast<size_t>(down)];
+
+                if (const float t = pulseOnSegment(stages, cp[static_cast<size_t>(down)].chainOrder);
+                    t >= 0.0f)
+                    drawSpark(g, from + (to - from) * t, getObserverColour(p), 2.6f, energy);
+            }
         }
     }
 
@@ -2012,10 +2068,14 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
 
         // Segment 0 is the sound LEAVING the listener for the first stage, so the charge travels
         // from the observer toward the star - `from` is the star here, `to` the observer.
-        const int stages = frame.stages[static_cast<size_t>(index)];
+        //
+        // Wearing the colour of the LISTENER IT LEFT, not of the star it is heading for. Two
+        // listeners feeding the same chart is the whole reason to look: whose sound this is
+        // matters more here than where it is going, and the star it lands on says that anyway.
+        const int stages = frame.stages[static_cast<size_t>(p)][static_cast<size_t>(index)];
 
         if (const float t = pulseOnSegment(stages, 0); t >= 0.0f)
-            drawSpark(g, to + (from - to) * t, node.colour, 2.4f + 1.6f * w, w);
+            drawSpark(g, to + (from - to) * t, getObserverColour(p), 2.4f + 1.6f * w, w);
 
         const float impact = 4.0f + 16.0f * w;
         g.setGradientFill(juce::ColourGradient(node.colour.withAlpha(0.42f * w), to.x, to.y,
@@ -2081,8 +2141,12 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
 
     // ARRIVAL. The star rings when the charge lands on it - sequentially down a chain, all at once
     // inside a closed cluster, because a cluster is one stage and its members share an order.
-    const auto& own = frame.heard[0][static_cast<size_t>(index)];
-    const float beat = stageFlash(frame.stages[static_cast<size_t>(index)], own.chainOrder);
+    float beat = 0.0f;
+    for (int p = 0; p < getNumObservers(); ++p)
+        if (sendsCharge(frame, p, index))
+            beat = std::max(beat, stageFlash(
+                frame.stages[static_cast<size_t>(p)][static_cast<size_t>(index)],
+                frame.heard[static_cast<size_t>(p)][static_cast<size_t>(index)].chainOrder));
 
     // Negative polarity stays unlit here too, so a star reads the same way as its aura does.
     const float lit = (node.sensitivity < 0.0f) ? 0.0f : peak;

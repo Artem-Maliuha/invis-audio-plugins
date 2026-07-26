@@ -196,7 +196,10 @@ struct ChartFrame {
     std::array<std::vector<StarContribution>, 2> heard;   // one row per observer
     std::vector<ConstellationFigure> figures;
     std::vector<ConstellationCluster> parallel;           // the closed clusters, flattened
-    std::vector<int> stages;                              // stages in each star's figure, per star
+    // Stages per star, PER OBSERVER. Each observer picks its own entry, so the same chain can be
+    // numbered from opposite ends - which is exactly what two listeners either side of a figure
+    // should look like: two charges travelling toward each other.
+    std::array<std::vector<int>, 2> stages;
 };
 
 /**
@@ -464,6 +467,17 @@ private:
 
     /** 0..1 afterglow of a stage that has just been struck. */
     float stageFlash(int stages, int order) const;
+
+    /**
+     * Does this observer's charge run through this star?
+     *
+     * NO CONNECTION, NO CHARGE. A line you drew is the wiring and it is always shown; a spark is
+     * SOUND, and sound only exists where an observer actually reaches. A chain nobody is feeding
+     * used to keep pulsing on the argument that the animation shows structure - but structure is
+     * what the line already says, and a travelling charge on a silent chain claims a signal that
+     * is not there. The two must not be conflated: the line is the wiring, the spark is the sound.
+     */
+    bool sendsCharge(const ChartFrame& frame, int observer, int star) const;
     void paintGhostNode(juce::Graphics& g);
     void paintObserver(juce::Graphics& g, int observerIndex);
 
