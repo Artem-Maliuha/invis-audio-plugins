@@ -220,6 +220,188 @@ private:
 
 // =================================================================================================
 
+/**
+ * THE LFO SHAPES, and why exactly these five.
+ *
+ * The set the hardware settled on is sine, triangle, square, saw, ramp and random - the Moogerfooger
+ * MF-108M lists precisely that. Ramp is a saw with its slope reversed and is the one that adds no
+ * new character, so it is the one dropped: five shapes that each sound like something, rather than
+ * six where two are the same idea.
+ *
+ * They matter differently per effect. A flanger is almost always sine or triangle, because the
+ * sweep has to be even - a square makes it a two-position switch and a saw makes it a rewind. A
+ * chorus is where random earns its place: irregular motion is what stops several voices sounding
+ * like one detuned one.
+ */
+enum class LfoShape { Sine, Triangle, Square, Saw, Random, NumShapes };
+
+inline const char* const kLfoShapeLabels[] = { "SINE", "TRI", "SQR", "SAW", "RAND" };
+
+/** One oscillator, shared by everything that modulates. Output is -1..1. */
+class Lfo {
+public:
+    void prepare(double sr) { sampleRate = sr; reset(); }
+    void reset() { phase = 0.0f; held = 0.0f; lastQuadrant = -1; }
+
+    void setShape(LfoShape s) { shape = s; }
+    void setRate(float hz) { rate = juce::jlimit(0.005f, 40.0f, hz); }
+
+    /** Where in the cycle to start, 0..1. Two instances an offset apart is what stereo motion is. */
+    void setPhaseOffset(float turns) { offset = turns - std::floor(turns); }
+
+    float next()
+    {
+        phase += rate / static_cast<float>(sampleRate);
+        if (phase >= 1.0f) phase -= 1.0f;
+
+        const float p = phase + offset >= 1.0f ? phase + offset - 1.0f : phase + offset;
+
+        switch (shape)
+        {
+            case LfoShape::Sine:     return std::sin(p * juce::MathConstants<float>::twoPi);
+            case LfoShape::Triangle: return 4.0f * std::abs(p - 0.5f) - 1.0f;
+            case LfoShape::Square:   return p < 0.5f ? 1.0f : -1.0f;
+            case LfoShape::Saw:      return 1.0f - 2.0f * p;
+
+            case LfoShape::Random:
+            default:
+            {
+                // Sampled TWICE a cycle, not once: at one sample per cycle the rate control barely
+                // reads as a rate at all, and every unit that offers random does it on the half.
+                const int quadrant = static_cast<int>(p * 2.0f);
+
+                if (quadrant != lastQuadrant)
+                {
+                    lastQuadrant = quadrant;
+                    held = rng.nextFloat() * 2.0f - 1.0f;
+                }
+
+                return held;
+            }
+        }
+    }
+
+private:
+    double sampleRate { 44100.0 };
+    LfoShape shape { LfoShape::Sine };
+    float rate { 1.0f }, phase { 0.0f }, offset { 0.0f }, held { 0.0f };
+    int lastQuadrant { -1 };
+    juce::Random rng;
+};
+
+/** Stage counts a phaser is actually built with. Even numbers, because a notch needs a pair. */
+inline constexpr int kPhaserStageCounts[] = { 2, 4, 6, 8, 12 };
+inline const char* const kPhaserStageLabels[] = { "2", "4", "6", "8", "12" };
+
+/**
+ * PHASER - an allpass chain, which is what makes it a phaser rather than a flanger.
+ *
+ * It was sharing the modulated-delay algorithm, and that was simply wrong: a flanger's notches are
+ * harmonically spaced because they come from a delay, and a phaser's are NOT, because they come
+ * from a cascade of allpass sections whose corner is swept. That non-harmonic spacing is the entire
+ * difference between the two effects, and no amount of parameter tuning on a delay produces it.
+ *
+ * Four stages is the Phase 90 and the Small Stone; the rest of the range is what the pedals with a
+ * stage switch actually offer.
+ */
+class PhaserEffect : public InvisEffect {
+public:
+    enum Param { Rate, Depth, Centre, Feedback, Stages, Wave, Stereo, NumParams };
+
+    void prepare(double sr, int) override
+    {
+        sampleRate = sr;
+        lfo.prepare(sr);
+        reset();
+    }
+
+    void reset() override
+    {
+        for (auto& z : state) z = 0.0f;
+        lfo.reset();
+        lastOut = 0.0f;
+    }
+
+    void setChannel(int c) override { side = juce::jlimit(0, 1, c); applyStereo(); }
+    juce::Range<int> getParamRange() const override { return { 0, NumParams }; }
+
+    void setParam(int index, float v) override
+    {
+        v = juce::jlimit(0.0f, 1.0f, v);
+
+        switch (index)
+        {
+            case Rate:     lfo.setRate(0.05f * std::pow(12.0f / 0.05f, v)); break;
+            case Depth:    depth = v; break;
+            case Centre:   centre = juce::jmap(v, 200.0f, 2200.0f); break;
+            // Paid for on BOTH ends, like the flanger. An allpass chain with regeneration is a
+            // resonator: measured, six stages at full negative feedback reached four times the
+            // input, which is not a character choice, it is a control that hands the rest of the
+            // chain a signal it never asked for.
+            case Feedback:
+                feedback = juce::jlimit(-0.8f, 0.8f, v * 1.6f - 0.8f);
+                inputTrim = 1.0f - 0.45f * std::abs(feedback);
+                outputTrim = 1.0f / (1.0f + 1.7f * std::abs(feedback));
+                break;
+
+            case Stages:
+                stages = kPhaserStageCounts[juce::jlimit(0, 4, static_cast<int>(v * 5.0f * 0.999f))];
+                break;
+
+            case Wave:
+                lfo.setShape(static_cast<LfoShape>(
+                    juce::jlimit(0, static_cast<int>(LfoShape::NumShapes) - 1,
+                                 static_cast<int>(v * static_cast<float>(LfoShape::NumShapes) * 0.999f))));
+                break;
+
+            case Stereo: stereo = v; applyStereo(); break;
+            default: break;
+        }
+    }
+
+    void process(float* x, int n) override
+    {
+        for (int s = 0; s < n; ++s)
+        {
+            const float sweep = centre * std::pow(4.0f, lfo.next() * depth);
+            const float w = juce::jlimit(0.001f, 0.45f,
+                                         sweep / static_cast<float>(sampleRate));
+
+            // One-pole allpass coefficient from the corner. Recomputed per sample because the
+            // corner is what is being swept - holding it per block is where cheap phasers step.
+            const float t = std::tan(juce::MathConstants<float>::pi * w);
+            const float a = (t - 1.0f) / (t + 1.0f);
+
+            float v = x[s] * inputTrim + lastOut * feedback;
+
+            for (int i = 0; i < stages; ++i)
+            {
+                const float out = a * v + state[static_cast<size_t>(i)];
+                state[static_cast<size_t>(i)] = v - a * out;
+                v = out;
+            }
+
+            lastOut = v;
+            x[s] = v * outputTrim;
+        }
+    }
+
+private:
+    void applyStereo() { lfo.setPhaseOffset(side == 0 ? 0.0f : stereo * 0.5f); }
+
+    static constexpr int kMaxStages = 12;
+
+    double sampleRate { 44100.0 };
+    Lfo lfo;
+
+    float state[kMaxStages] { };
+    float depth { 0.6f }, centre { 700.0f }, feedback { 0.0f }, stereo { 0.0f }, lastOut { 0.0f };
+    float inputTrim { 1.0f }, outputTrim { 1.0f };
+    int stages { 4 }, side { 0 };
+};
+
+// =================================================================================================
+
 /** Note divisions a synced time can land on, longest first, with the labels the readout shows. */
 inline constexpr float kNoteFactors[] = {
     4.0f, 3.0f, 2.0f, 1.5f, 1.0f, 0.75f, 0.6667f, 0.5f, 0.375f, 0.3333f, 0.25f, 0.1667f, 0.125f
@@ -283,7 +465,11 @@ public:
 
             // DIGITAL -> ANALOGUE -> TAPE as one travel: how much the feedback path softens on
             // every pass. The catalogue entries are places to stand on it, not separate code.
-            case Character: character = v; break;
+            // THREE MACHINES, chosen. Digital repeats clean, analogue rounds, tape rounds harder
+            // and compresses. A continuous slide between them was a control nobody could aim.
+            case Character:
+                character = juce::jlimit(0, 2, static_cast<int>(v * 3.0f * 0.999f)) * 0.5f;
+                break;
             case Wow:       wow = v; break;
             default: break;
         }
@@ -374,16 +560,19 @@ private:
  */
 class ModulationEffect : public InvisEffect {
 public:
-    enum Param { Rate, Depth, Delay, Feedback, Shape, NumParams };
+    enum Param { Rate, Depth, Delay, Feedback, Wave, Stereo, HighPass, NumParams };
 
     void prepare(double sr, int) override
     {
         sampleRate = sr;
         line.prepare(sr, 0.05f);
+        lfo.prepare(sr);
+        fbCut.setCutoff(20.0f, sr);
         reset();
     }
 
-    void reset() override { line.reset(); phase = 0.0f; lastOut = 0.0f; }
+    void reset() override { line.reset(); lfo.reset(); fbCut.reset(); lastOut = 0.0f; }
+    void setChannel(int c) override { side = juce::jlimit(0, 1, c); applyStereo(); }
 
     void setParam(int index, float v) override
     {
@@ -391,7 +580,7 @@ public:
 
         switch (index)
         {
-            case Rate:     rate = 0.05f * std::pow(12.0f / 0.05f, v); break;   // 0.05 .. 12 Hz
+            case Rate:     lfo.setRate(0.05f * std::pow(12.0f / 0.05f, v)); break;   // 0.05 .. 12 Hz
             case Depth:    depth = v; break;
             case Delay:    baseMs = juce::jmap(v, 0.4f, 26.0f); break;
             // BIPOLAR, and the centre is OFF. Half feedback is a plain chorus; either end is a
@@ -406,7 +595,22 @@ public:
                 inputTrim = 1.0f - 0.55f * std::abs(feedback);
                 outputTrim = 1.0f / (1.0f + 1.6f * std::abs(feedback));
                 break;
-            case Shape:    shape = v; break;
+
+            // A SELECTOR, not a morph. Half way between a triangle and a square is not a shape
+            // anybody asked for, and a knob that lands there is a knob you cannot set.
+            case Wave:
+                lfo.setShape(static_cast<LfoShape>(
+                    juce::jlimit(0, static_cast<int>(LfoShape::NumShapes) - 1,
+                                 static_cast<int>(v * static_cast<float>(LfoShape::NumShapes) * 0.999f))));
+                break;
+
+            // The two sides an offset apart IS stereo motion - there is nothing else to it, and
+            // without it a chorus on a stereo source is just the same chorus twice.
+            case Stereo:   stereo = v; applyStereo(); break;
+
+            // Keeping the bottom out of the regeneration. Standard on every flanger worth the name:
+            // resonance on the low end turns into a rumble that owns the mix.
+            case HighPass: fbCut.setCutoff(juce::jmap(v, 20.0f, 900.0f), sampleRate); break;
             default: break;
         }
     }
@@ -415,28 +619,18 @@ public:
 
     void process(float* x, int n) override
     {
-        const float step = rate / static_cast<float>(sampleRate);
         const float depthSamples = static_cast<float>(sampleRate) * 0.001f * baseMs * 0.9f * depth;
         const float baseSamples = static_cast<float>(sampleRate) * 0.001f * baseMs;
 
         for (int s = 0; s < n; ++s)
         {
-            phase += step;
-            if (phase >= 1.0f) phase -= 1.0f;
-
-            // Sine to triangle. A triangle sweeps at constant speed, which is what gives a flanger
-            // its even jet rather than the pause a sine leaves at each turning point.
-            const float sine = std::sin(phase * juce::MathConstants<float>::twoPi);
-            const float tri = 4.0f * std::abs(phase - 0.5f) - 1.0f;
-            const float lfo = juce::jmap(shape, sine, tri);
-
-            const float d = baseSamples + depthSamples * lfo;
+            const float d = baseSamples + depthSamples * lfo.next();
             const float delayed = line.read(d);
 
             // The input is backed off as the feedback rises. A resonant flanger otherwise gains
             // over twelve decibels at the extremes - measured, not guessed - and hands the rest of
             // the chain a signal it never asked for. Character stays; the level does not run.
-            line.write(x[s] * inputTrim + lastOut * feedback);
+            line.write(x[s] * inputTrim + (lastOut - fbCut.process(lastOut)) * feedback);
             lastOut = delayed;
 
             x[s] = delayed * outputTrim;
@@ -444,12 +638,16 @@ public:
     }
 
 private:
+    void applyStereo() { lfo.setPhaseOffset(side == 0 ? 0.0f : stereo * 0.5f); }
+
     double sampleRate { 44100.0 };
     DelayLine line;
+    Lfo lfo;
+    OnePole fbCut;
 
-    float rate { 0.8f }, depth { 0.5f }, baseMs { 8.0f }, feedback { 0.0f }, shape { 0.0f };
-    float phase { 0.0f }, lastOut { 0.0f };
-    float inputTrim { 1.0f }, outputTrim { 1.0f };
+    float depth { 0.5f }, baseMs { 8.0f }, feedback { 0.0f }, stereo { 0.0f };
+    float lastOut { 0.0f }, inputTrim { 1.0f }, outputTrim { 1.0f };
+    int side { 0 };
 };
 
 // =================================================================================================
@@ -467,17 +665,18 @@ private:
  */
 class SaturationEffect : public InvisEffect {
 public:
-    enum Param { Drive, Character, Bias, Tone, NumParams };
+    enum Param { Drive, Type, Bias, Tone, Focus, NumParams };
 
     void prepare(double sr, int) override
     {
         sampleRate = sr;
         tilt.setCutoff(4000.0f, sr);
+        emphasis.setCutoff(120.0f, sr);
         dcBlockA = 1.0f - (20.0f * juce::MathConstants<float>::twoPi / static_cast<float>(sr));
         reset();
     }
 
-    void reset() override { tilt.reset(); dcX = dcY = 0.0f; }
+    void reset() override { tilt.reset(); emphasis.reset(); dcX = dcY = 0.0f; }
 
     void setParam(int index, float v) override
     {
@@ -486,7 +685,20 @@ public:
         switch (index)
         {
             case Drive:     drive = juce::jmap(v, 1.0f, 40.0f); break;
-            case Character: character = v; break;
+            // A TYPE, not a travel. "Sixty per cent of the way from tube to fold" is not a sound
+            // anyone can ask for, and a knob that lands there is the reason these were unusable.
+            case Type:
+                curve = juce::jlimit(0, static_cast<int>(Curve::NumCurves) - 1,
+                                     static_cast<int>(v * static_cast<float>(Curve::NumCurves) * 0.999f));
+                break;
+
+            // WHERE it bites. Saturation applied flat colours everything equally, which is the one
+            // thing analogue never does - pre-emphasis is how you aim it at the part that should
+            // break up while the rest stays intact.
+            case Focus:
+                focus = v;
+                emphasis.setCutoff(juce::jmap(v, 120.0f, 6000.0f), sampleRate);
+                break;
             case Bias:      bias = juce::jmap(v, -0.35f, 0.35f); break;
             case Tone:      tone = v; tilt.setCutoff(juce::jmap(v, 700.0f, 16000.0f), sampleRate); break;
             default: break;
@@ -527,7 +739,12 @@ public:
 
         for (int s = 0; s < n; ++s)
         {
-            float v = shape(x[s] * drive + bias) * makeup;
+            // Aimed before it is driven. The emphasis decides WHAT breaks up; it is not a tone
+            // control on the way out, which is what TONE below is for.
+            const float low = emphasis.process(x[s]);
+            const float aimed = juce::jmap(focus, x[s], x[s] - low);
+
+            float v = shape(aimed * drive + bias) * makeup;
 
             // HOW FAR THE CURVE BENT IT, against what a straight wire would have passed. This is
             // the honest answer to "is it saturating": at low drive the two paths agree and the
@@ -544,8 +761,8 @@ public:
 
             // Tone as a tilt rather than a filter: saturation without it just gets brighter, and
             // the darker half is most of what "tape" means.
-            const float low = tilt.process(v);
-            x[s] = juce::jmap(tone, low, v);
+            const float tilted = tilt.process(v);
+            x[s] = juce::jmap(tone, tilted, v);
         }
 
         if (straight > 1.0e-9)
@@ -564,26 +781,45 @@ public:
     }
 
 private:
-    /** tanh -> soft clip -> hard fold, walked by CHARACTER. */
+    /** The five curves, each a different way of running out of room. */
+    enum class Curve { Tube, Tape, Transistor, Clip, Fold, NumCurves };
+
     float shape(float v) const
     {
-        const float soft = std::tanh(v);
-        const float clipped = juce::jlimit(-1.0f, 1.0f, v * 0.72f);
+        switch (static_cast<Curve>(curve))
+        {
+            // Asymmetric and soft: a valve leans on one half of the wave harder than the other,
+            // which is where its even harmonics come from.
+            // The offset is subtracted EXACTLY, not to three decimal places. A curve that returns
+            // 0.0004 for an input of zero puts DC on the output of every instance of it, and a
+            // chart can hold sixteen - silence in has to be silence out or the plugin hums.
+            case Curve::Tube:
+            {
+                constexpr float lean = 0.12f;
+                return std::tanh(v * 0.9f + lean) - std::tanh(lean);
+            }
 
-        // Past two thirds the curve starts folding, which is where it stops being warmth and
-        // becomes damage - CRUSH lives up here.
-        const float folded = std::sin(juce::jlimit(-6.0f, 6.0f, v));
+            // Symmetric, softest knee - compresses before it distorts.
+            case Curve::Tape:       return std::tanh(v * 0.75f);
 
-        if (character <= 0.5f)  return juce::jmap(character * 2.0f, soft, clipped);
+            // Harder knee than tape and odd-harmonic: silicon does not ease into it.
+            case Curve::Transistor: return v / (1.0f + std::abs(v));
 
-        return juce::jmap((character - 0.5f) * 2.0f, clipped, folded);
+            case Curve::Clip:       return juce::jlimit(-1.0f, 1.0f, v * 0.72f);
+
+            // Past the limit it turns back on itself. Not warmth - damage, which is the point.
+            case Curve::Fold:
+            default:                return std::sin(juce::jlimit(-6.0f, 6.0f, v));
+        }
     }
 
     double sampleRate { 44100.0 };
     OnePole tilt;
 
-    float drive { 4.0f }, character { 0.0f }, bias { 0.0f }, tone { 0.7f }, makeup { 1.0f };
+    OnePole emphasis;
+    float drive { 4.0f }, bias { 0.0f }, tone { 0.7f }, makeup { 1.0f }, focus { 0.0f };
     float activity { 0.0f };
+    int curve { 0 };
     float dcBlockA { 0.999f }, dcX { 0.0f }, dcY { 0.0f };
 };
 

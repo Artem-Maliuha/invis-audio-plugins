@@ -18,7 +18,7 @@ namespace invis::dsp {
  * They stay in one COLOUR family - the ear groups them as space, and the palette follows the ear -
  * while being two machines underneath.
  */
-enum class AlgorithmKind { Reverb, Delay, Modulation, Saturation };
+enum class AlgorithmKind { Reverb, Delay, Modulation, Phaser, Saturation };
 
 /** What an algorithm's knobs are called and what their numbers mean. Display side only. */
 const EffectParam* getAlgorithmParams(AlgorithmKind kind, int& count);

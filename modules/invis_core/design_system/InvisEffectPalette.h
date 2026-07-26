@@ -138,6 +138,7 @@ inline const std::vector<EffectType>& getEffectCatalogue()
         { "FLANGER", EffectFamily::Modulation, -9.0f, 0.90f, 1.00f },
         { "PHASER",  EffectFamily::Modulation, 12.0f, 0.72f, 0.90f },
         { "TREMOLO", EffectFamily::Modulation, -3.0f, 0.86f, 0.86f },
+        { "VIBRATO", EffectFamily::Modulation,  9.0f, 0.78f, 0.92f },
 
         // SATURATION - heat. Redder and darker as it gets more destructive, which is the same way
         // a real overload behaves: amber first, then red.
