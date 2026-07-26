@@ -24,6 +24,7 @@
 #include "design_system/InvisLayout.h"
 #include "design_system/InvisMotion.h"
 #include "design_system/InvisFonts.h"
+#include "design_system/InvisEffectPalette.h"
 #include "design_system/InvisPopupLookAndFeel.h"
 
 // Framework (shared machine-driven behaviour)

@@ -41,19 +41,30 @@ juce::Rectangle<float> InvisConstellation::getPadArea() const
     return centreIntrinsic(getLocalBounds().toFloat(), getIntrinsicSize()).reduced(m.bezelWidth + 2.0f);
 }
 
+void InvisConstellation::setPadDesignSize(juce::Point<int> designPixels)
+{
+    if (designPixels == designSize) return;
+
+    designSize = designPixels;
+    repaint();
+}
+
 juce::Point<float> InvisConstellation::toPixels(juce::Point<float> n) const
 {
+    // BOTH AXES SCALE BY WIDTH. Scaling y by height instead would stretch the chart's own
+    // coordinate space, which is fine while the pad is square and silently wrong the moment it is
+    // not: every halo would draw as an ellipse while the routing still measured circles.
     const auto a = getPadArea();
-    return { a.getX() + n.x * a.getWidth(), a.getY() + n.y * a.getHeight() };
+    return { a.getX() + n.x * a.getWidth(), a.getY() + n.y * a.getWidth() };
 }
 
 juce::Point<float> InvisConstellation::toNormalized(juce::Point<float> p) const
 {
     const auto a = getPadArea();
-    if (a.getWidth() <= 0.0f || a.getHeight() <= 0.0f) return { 0.5f, 0.5f };
+    if (a.getWidth() <= 0.0f || a.getHeight() <= 0.0f) return { 0.5f, getAspect() * 0.5f };
 
     return { juce::jlimit(0.0f, 1.0f, (p.x - a.getX()) / a.getWidth()),
-             juce::jlimit(0.0f, 1.0f, (p.y - a.getY()) / a.getHeight()) };
+             juce::jlimit(0.0f, getAspect(), (p.y - a.getY()) / a.getWidth()) };
 }
 
 float InvisConstellation::radiusToPixels(float r) const
@@ -957,7 +968,8 @@ int InvisConstellation::addNode(const juce::String& label, juce::Colour colour)
     const float ring = 0.33f;
 
     ConstellationNode node;
-    node.position = { 0.5f + std::cos(angle) * ring, 0.5f + std::sin(angle) * ring };
+    const float midY = getAspect() * 0.5f;
+    node.position = { 0.5f + std::cos(angle) * ring, midY + std::sin(angle) * ring };
     node.colour = colour;
     node.label = label;
 
@@ -1050,10 +1062,14 @@ void InvisConstellation::randomise()
     for (int i = 0; i < n; ++i)
     {
         const float angle = slice * static_cast<float>(i) + rng.nextFloat() * slice * 0.7f;
+        // Spread along the taller axis in proportion, so a tall chart fills rather than keeping
+        // everything in a square band across its middle.
+        const float aspect = getAspect();
         const float dist = 0.18f + rng.nextFloat() * 0.26f;
 
-        nodes[static_cast<size_t>(i)].position = { juce::jlimit(0.06f, 0.94f, 0.5f + std::cos(angle) * dist),
-                                                   juce::jlimit(0.06f, 0.94f, 0.5f + std::sin(angle) * dist) };
+        nodes[static_cast<size_t>(i)].position = {
+            juce::jlimit(0.06f, 0.94f, 0.5f + std::cos(angle) * dist),
+            juce::jlimit(0.06f, aspect - 0.06f, aspect * 0.5f + std::sin(angle) * dist * aspect) };
         // Reach is the sensitivity now, so shuffling the chart shuffles how far each star
         // carries. Kept off both ends: a star that reaches nothing, or one that swallows the whole
         // sky, is a star you would only ever have to fix by hand afterwards.
@@ -1103,7 +1119,7 @@ void InvisConstellation::randomiseObservers()
     // happens to be on that side, which is not a starting point anyone would have chosen.
     for (int i = 0; i < getNumObservers(); ++i)
         setObserverPosition(i, { 0.18f + rng.nextFloat() * 0.64f,
-                                 0.18f + rng.nextFloat() * 0.64f });
+                                 getAspect() * (0.18f + rng.nextFloat() * 0.64f) });
 }
 
 void InvisConstellation::setNodePosition(int index, juce::Point<float> n)
@@ -1111,7 +1127,7 @@ void InvisConstellation::setNodePosition(int index, juce::Point<float> n)
     if (index < 0 || index >= static_cast<int>(nodes.size())) return;
 
     nodes[static_cast<size_t>(index)].position = { juce::jlimit(0.0f, 1.0f, n.x),
-                                                   juce::jlimit(0.0f, 1.0f, n.y) };
+                                                   juce::jlimit(0.0f, getAspect(), n.y) };
     if (onGeometryChanged) onGeometryChanged();
     notifyWeights();
     repaint();
@@ -1179,7 +1195,8 @@ void InvisConstellation::setNodeColour(int index, juce::Colour colour)
 void InvisConstellation::setObserverPosition(int observerIndex, juce::Point<float> n)
 {
     const int i = juce::jlimit(0, 1, observerIndex);
-    observers[static_cast<size_t>(i)] = { juce::jlimit(0.0f, 1.0f, n.x), juce::jlimit(0.0f, 1.0f, n.y) };
+    observers[static_cast<size_t>(i)] = { juce::jlimit(0.0f, 1.0f, n.x),
+                                         juce::jlimit(0.0f, getAspect(), n.y) };
 
     // In a linked mode the two are the same listener and must not drift apart
     if (!constellationModeHasTwoObservers(channelMode))

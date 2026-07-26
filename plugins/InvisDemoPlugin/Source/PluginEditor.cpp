@@ -3,21 +3,13 @@
 
 namespace {
 
-// The catalogue a star can BE. Product knowledge, deliberately outside the atom.
-struct EffectChoice { const char* name; juce::Colour colour; };
+// THE SERIES CATALOGUE, not the bench's own. Colours used to be picked one at a time here, which
+// is how DELAY ended up amber and SATURATE magenta - two effects whose families the industry has
+// agreed on for decades, wearing each other's colours. See InvisEffectPalette for why the three
+// families sit where they do on the hue wheel.
+const std::vector<invis::ui::EffectType>& catalogue() { return invis::ui::getEffectCatalogue(); }
 
-const EffectChoice kEffectCatalogue[] = {
-    { "REVERB",   juce::Colour::fromRGB(0, 229, 255) },
-    { "DELAY",    juce::Colour::fromRGB(255, 171, 0) },
-    { "SATURATE", juce::Colour::fromRGB(224, 64, 251) },
-    { "CHORUS",   juce::Colour::fromRGB(0, 230, 118) },
-    { "FLANGER",  juce::Colour::fromRGB(255, 23, 68) },
-    { "PHASER",   juce::Colour::fromRGB(41, 121, 255) },
-    { "CRUSH",    juce::Colour::fromRGB(255, 87, 34) },
-    { "FILTER",   juce::Colour::fromRGB(245, 247, 250) }
-};
-
-constexpr int kNumEffects = static_cast<int>(sizeof(kEffectCatalogue) / sizeof(kEffectCatalogue[0]));
+int numEffects() { return static_cast<int>(catalogue().size()); }
 
 } // namespace
 
@@ -27,7 +19,7 @@ InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
 {
 
     std::vector<juce::String> names;
-    for (const auto& e : kEffectCatalogue) names.push_back(e.name);
+    for (const auto& e : catalogue()) names.push_back(e.name);
 
     effectCell.setLabel({});
     effectCell.setPopupMode(true);
@@ -36,7 +28,7 @@ InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
     effectCell.onIndexChanged = [this](int i, const juce::String& name) {
         if (index < 0) return;
         owner.constellation.setNodeLabel(index, name);
-        owner.constellation.setNodeColour(index, kEffectCatalogue[i].colour);
+        owner.constellation.setNodeColour(index, catalogue()[static_cast<size_t>(i)].getColour());
     };
     addAndMakeVisible(effectCell);
 
@@ -155,8 +147,8 @@ void InvisDemoPluginEditor::StarPanel::refreshFromNode()
 
     const auto& node = owner.constellation.getNode(index);
 
-    for (int i = 0; i < kNumEffects; ++i)
-        if (node.label == kEffectCatalogue[i].name)
+    for (int i = 0; i < numEffects(); ++i)
+        if (node.label == catalogue()[static_cast<size_t>(i)].name)
             effectCell.setSelectedIndex(i, juce::dontSendNotification);
 
     sensitivityKnob.setValue(node.sensitivity, juce::dontSendNotification);
@@ -416,8 +408,12 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
         }),
     }));
 
-    // MORPH PAD: the polygon effect editor.
+    // THE CHART IS THE ROOM. A fixed square left a band of unused panel under it; the field is the
+    // instrument, so it takes every pixel the workspace is not otherwise using.
     constellation.setPadSize(invis::ui::InvisConstellationSize::L);
+    constellation.setPadDesignSize({
+        kWorkspaceWidth - kStarPanelWidth - invis::ui::layout::kGapGroup,
+        std::max(kWorkspaceHeight, invis::modules::InputSidebarUI::getMinimumHeight()) });
     constellation.onWeightsChanged = [this](int observerIndex, const std::vector<float>& w) {
         // Weights are NOT normalised: outside every aura the signal is dry. Once real effects
         // exist these become parallel send levels, one set per channel stream.
@@ -570,23 +566,34 @@ void InvisDemoPluginEditor::pullChartFromState()
 
 void InvisDemoPluginEditor::addRandomStar()
 {
-    const int slot = juce::Random::getSystemRandom().nextInt(kNumEffects);
-    const auto& choice = kEffectCatalogue[slot];
+    const int slot = juce::Random::getSystemRandom().nextInt(numEffects());
+    const auto& choice = catalogue()[static_cast<size_t>(slot)];
 
-    if (const int index = constellation.addNode(choice.name, choice.colour); index >= 0)
+    if (const int index = constellation.addNode(choice.name, choice.getColour()); index >= 0)
         starPanel.showFor(index);
 }
 
 void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> at)
 {
     juce::PopupMenu menu;
-    menu.addSectionHeader("NEW STAR");
 
-    for (int i = 0; i < kNumEffects; ++i)
+    // GROUPED BY FAMILY. The catalogue is ordered so the three bands fall out on their own, and a
+    // header at each boundary makes the grouping something you read rather than infer from hue.
+    invis::ui::EffectFamily shown = static_cast<invis::ui::EffectFamily>(-1);
+
+    for (int i = 0; i < numEffects(); ++i)
     {
-        juce::PopupMenu::Item item(kEffectCatalogue[i].name);
+        const auto& e = catalogue()[static_cast<size_t>(i)];
+
+        if (i == 0 || e.family != shown)
+        {
+            shown = e.family;
+            menu.addSectionHeader(invis::ui::getFamilyName(shown));
+        }
+
+        juce::PopupMenu::Item item(e.name);
         item.itemID = i + 1;
-        item.colour = kEffectCatalogue[i].colour;
+        item.colour = e.getColour();
         menu.addItem(item);
     }
 
@@ -614,11 +621,12 @@ void InvisDemoPluginEditor::chooseEffectThen(std::optional<juce::Point<float>> a
     // of the choice has to back out of the creation too.
     menu.showMenuAsync(options, [this, at](int result)
     {
-        if (result <= 0 || result > kNumEffects) return;
+        if (result <= 0 || result > numEffects()) return;
 
-        const auto& choice = kEffectCatalogue[result - 1];
-        const int index = at.has_value() ? constellation.addNodeAt(choice.name, choice.colour, *at)
-                                         : constellation.addNode(choice.name, choice.colour);
+        const auto& choice = catalogue()[static_cast<size_t>(result - 1)];
+        const auto colour = choice.getColour();
+        const int index = at.has_value() ? constellation.addNodeAt(choice.name, colour, *at)
+                                         : constellation.addNode(choice.name, colour);
 
         if (index >= 0) starPanel.showFor(index);
     });
@@ -651,8 +659,7 @@ void InvisDemoPluginEditor::layoutWorkspace()
 
     // NOTHING ABOVE THE SKY. The chart starts at the top of the workspace and simply is the
     // field - its tools float ON it rather than sitting in a row that would read as a lid.
-    const auto padSize = constellation.getIntrinsicSize();
-    constellation.setBoundsCentredIn(area.removeFromTop(padSize.y));
+    constellation.setBoundsCentredIn(area);
 
     skyTools.setBounds(constellation.getBounds()
                            .removeFromTop(kSkyToolsHeight + 2 * layout::kGapRelated)

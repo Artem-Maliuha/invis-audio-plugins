@@ -286,7 +286,31 @@ public:
 
     static ConstellationMetrics getMetrics(InvisConstellationSize size);
     static juce::Point<int> getIntrinsicSize(InvisConstellationSize size);
-    juce::Point<int> getIntrinsicSize() const { return getIntrinsicSize(padSize); }
+    juce::Point<int> getIntrinsicSize() const
+    {
+        return designSize.x > 0 ? designSize : getIntrinsicSize(padSize);
+    }
+
+    /**
+     * An explicit design size, for a plugin that wants the chart to be the room rather than a
+     * square parked in it.
+     *
+     * The presets stay as the defaults - the letterbox rule is unchanged, the chart still refuses
+     * to be squashed into arbitrary bounds. This only changes WHICH fixed size it holds to.
+     *
+     * NOT SQUARE-ONLY, and that took a coordinate change: positions used to be 0..1 on both axes
+     * and were stretched onto the height, so a taller chart would have drawn every halo as an
+     * ellipse and put the routing at odds with the picture. Both axes are normalized to WIDTH now,
+     * so y simply runs 0..getAspect() and every distance stays euclidean.
+     */
+    void setPadDesignSize(juce::Point<int> designPixels);
+
+    /** Height of the chart in chart units - 1.0 when square, more when it is taller than wide. */
+    float getAspect() const
+    {
+        const auto size = getIntrinsicSize();
+        return size.x > 0 ? static_cast<float>(size.y) / static_cast<float>(size.x) : 1.0f;
+    }
 
     void setBoundsCentredIn(juce::Rectangle<int> area)
     {
@@ -592,6 +616,7 @@ private:
     void paintObserver(juce::Graphics& g, int observerIndex);
 
     InvisConstellationSize padSize { InvisConstellationSize::M };
+    juce::Point<int> designSize { 0, 0 };   // 0 = follow the preset
 
     std::vector<ConstellationNode> nodes;
     std::vector<StarLink> links;
