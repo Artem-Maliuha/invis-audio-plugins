@@ -264,9 +264,12 @@ InvisDemoPluginEditor::EffectPanel::EffectPanel(InvisDemoPluginEditor& o) : owne
     {
         auto& k = paramKnobs[static_cast<size_t>(i)];
         k.setKnobSize(invis::ui::InvisKnobSize::XS);
+        // Through the CHART, not straight to the engine. Everything else about a star travels that
+        // way, and a control that takes a shortcut is a control whose value is missing from the
+        // saved state - which is exactly what happened to these.
         k.onValueChanged = [this, i](float v) {
             if (index < 0) return;
-            owner.processorRef.engine.setStarParam(index, i, v);
+            owner.constellation.setNodeEffectParam(index, i, v);
         };
         addChildComponent(k);
     }
@@ -299,7 +302,7 @@ void InvisDemoPluginEditor::EffectPanel::showFor(int starIndex)
                 return juce::String(d.toPlain(v), d.decimals) + d.suffix;
             });
 
-            k.setValue(owner.processorRef.engine.getStarParam(index, i),
+            k.setValue(owner.constellation.getNode(index).effectParams[static_cast<size_t>(i)],
                        juce::dontSendNotification);
         }
     }
@@ -395,6 +398,19 @@ InvisDemoPluginEditor::SkyTools::SkyTools(InvisDemoPluginEditor& o) : owner(o)
     key(shuffleSensButton,     "SENSITIVITIES", [this]() { owner.constellation.randomiseSensitivities(); });
     key(shuffleObserverButton, "OBSERVERS",     [this]() { owner.constellation.randomiseObservers(); });
 
+    // THREE WAYS TO TAKE THINGS AWAY, because a chart accumulates three different kinds of clutter.
+    // UNUSED sweeps the stars nothing reaches - added to try, then stranded when the observer moved
+    // on, still costing an effect instance and a vote in every hue mixture while making no sound.
+    // RELATIONS keeps every star and drops the wiring, which is how you re-think a figure without
+    // rebuilding it. ALL is the fresh sky.
+    key(deleteUnusedButton, "UNUSED",    [this]() { owner.constellation.removeUnusedStars(); });
+    key(deleteLinksButton,  "RELATIONS", [this]() { owner.constellation.clearLinks(); });
+    key(deleteAllButton,    "ALL",       [this]() { owner.constellation.clearAll(); });
+
+    // Only ALL is marked. Three warning-coloured keys in a row would make the row shout and teach
+    // you to ignore the colour - this is the one that takes everything and cannot be undone.
+    deleteAllButton.setDangerous(true);
+
     // Children included: without this the panel never hears about the cursor arriving on a key.
     addMouseListener(this, true);
     updateAlpha();
@@ -433,7 +449,14 @@ int InvisDemoPluginEditor::SkyTools::getRequiredWidth() const
                      + shuffleSensButton.getIntrinsicSize().x + layout::kGapBonded
                      + shuffleObserverButton.getIntrinsicSize().x;
 
-    return mode + layout::kGapGroup + add + layout::kGapGroup + random;
+    const int erase = caption("DELETE:") + layout::kGapBonded
+                    + deleteUnusedButton.getIntrinsicSize().x + layout::kGapBonded
+                    + deleteLinksButton.getIntrinsicSize().x + layout::kGapBonded
+                    + deleteAllButton.getIntrinsicSize().x;
+
+    // The WIDER of the two rows, since they are right-aligned against the same edge.
+    return std::max(mode + layout::kGapGroup + add,
+                    random + layout::kGapGroup + erase);
 }
 
 void InvisDemoPluginEditor::SkyTools::paint(juce::Graphics& g)
@@ -458,13 +481,19 @@ void InvisDemoPluginEditor::SkyTools::paint(juce::Graphics& g)
     caption("MODE:", modeCaption);
     caption("ADD:", addCaption);
     caption("RANDOMIZE:", randomCaption);
+    caption("DELETE:", deleteCaption);
 }
 
 void InvisDemoPluginEditor::SkyTools::resized()
 {
     using namespace invis::ui;
 
-    auto area = getLocalBounds();
+    auto full = getLocalBounds();
+    auto top = full.removeFromTop(kSkyToolsRowHeight);
+    full.removeFromTop(4);
+    auto bottom = full.removeFromTop(kSkyToolsRowHeight);
+
+    auto* area = &bottom;
 
     // Right to left: each group places its keys, then claims the caption slot to their left, so
     // the label always ends up beside exactly what it names however the keys are sized.
@@ -473,32 +502,44 @@ void InvisDemoPluginEditor::SkyTools::resized()
         const auto font = invis::ui::InvisFonts::getDisplayFont(8.0f, false);
         const int width = juce::GlyphArrangement::getStringWidthInt(font, text) + 4;
 
-        return area.removeFromRight(width);
+        return area->removeFromRight(width);
     };
 
-    shuffleObserverButton.setBoundsCentredIn(
-        area.removeFromRight(shuffleObserverButton.getIntrinsicSize().x));
-    area.removeFromRight(layout::kGapBonded);
-    shuffleSensButton.setBoundsCentredIn(
-        area.removeFromRight(shuffleSensButton.getIntrinsicSize().x));
-    area.removeFromRight(layout::kGapBonded);
-    shuffleStarsButton.setBoundsCentredIn(
-        area.removeFromRight(shuffleStarsButton.getIntrinsicSize().x));
-    area.removeFromRight(layout::kGapBonded);
+    const auto place = [&area](invis::ui::InvisButton& b)
+    { b.setBoundsCentredIn(area->removeFromRight(b.getIntrinsicSize().x)); };
+
+    // BOTTOM ROW: what changes a chart you already have.
+    place(deleteAllButton);
+    area->removeFromRight(layout::kGapBonded);
+    place(deleteLinksButton);
+    area->removeFromRight(layout::kGapBonded);
+    place(deleteUnusedButton);
+    area->removeFromRight(layout::kGapBonded);
+    deleteCaption = captionSlot("DELETE:");
+
+    area->removeFromRight(layout::kGapGroup);
+
+    place(shuffleObserverButton);
+    area->removeFromRight(layout::kGapBonded);
+    place(shuffleSensButton);
+    area->removeFromRight(layout::kGapBonded);
+    place(shuffleStarsButton);
+    area->removeFromRight(layout::kGapBonded);
     randomCaption = captionSlot("RANDOMIZE:");
 
-    area.removeFromRight(layout::kGapGroup);
+    // TOP ROW: what puts something on the sky in the first place.
+    area = &top;
 
-    addRandomButton.setBoundsCentredIn(area.removeFromRight(addRandomButton.getIntrinsicSize().x));
-    area.removeFromRight(layout::kGapBonded);
-    addStarButton.setBoundsCentredIn(area.removeFromRight(addStarButton.getIntrinsicSize().x));
-    area.removeFromRight(layout::kGapBonded);
+    place(addRandomButton);
+    area->removeFromRight(layout::kGapBonded);
+    place(addStarButton);
+    area->removeFromRight(layout::kGapBonded);
     addCaption = captionSlot("ADD:");
 
-    area.removeFromRight(layout::kGapGroup);
+    area->removeFromRight(layout::kGapGroup);
 
-    channelModeCell.setBounds(area.removeFromRight(kChannelCellWidth));
-    area.removeFromRight(layout::kGapBonded);
+    channelModeCell.setBounds(area->removeFromRight(kChannelCellWidth));
+    area->removeFromRight(layout::kGapBonded);
     modeCaption = captionSlot("MODE:");
 }
 
@@ -695,9 +736,19 @@ void InvisDemoPluginEditor::pushChartToEngine()
         const auto& node = constellation.getNode(i);
 
         if (engine.getStarAlgorithm(i) != node.label)
+        {
+            // The recipe's defaults are what makes a HALL sound like a hall. Loading them into the
+            // MODEL rather than only into the slot is what lets them be saved, compared and shown.
             engine.setStarAlgorithm(i, node.label);
 
+            for (int k = 0; k < invis::ui::ConstellationNode::kMaxStarParams; ++k)
+                constellation.setNodeEffectParam(i, k, engine.getStarParam(i, k));
+        }
+
         engine.setStarBlock(i, node.hpf, node.lpf, node.dryWet);
+
+        for (int k = 0; k < invis::ui::ConstellationNode::kMaxStarParams; ++k)
+            engine.setStarParam(i, k, node.effectParams[static_cast<size_t>(k)]);
     }
 
     // ONE PLAN, BOTH STREAMS. In the linked modes the second is never read, but filling it costs

@@ -66,7 +66,28 @@ void InvisDemoPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
-    // 1. Synthesize 100 Hz Sine Wave Generator Signal into Audio Buffer
+    // THE TEST TONE ONLY FILLS SILENCE.
+    //
+    // It used to be written unconditionally, which was harmless while there was nothing to hear
+    // and fatal the moment there was: loaded in a host, the plugin would overwrite the track with
+    // a 100 Hz sine and hand you that instead of your audio. The bench still needs something to
+    // meter when the standalone's input is muted, so the rule is simply "if nothing arrived,
+    // generate; otherwise get out of the way".
+    float arriving = 0.0f;
+    for (int ch = 0; ch < numChannels; ++ch)
+        arriving = std::max(arriving, buffer.getMagnitude(ch, 0, numSamples));
+
+    if (arriving < 1.0e-6f)
+        synthesiseTestTone(buffer);
+
+    chassisAndEngine(buffer);
+}
+
+void InvisDemoPluginProcessor::synthesiseTestTone(juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+    const int numChannels = buffer.getNumChannels();
+
     const float freq = 100.0f;
     const double phaseDelta = (freq * juce::MathConstants<double>::twoPi) / currentSampleRate;
 
@@ -83,6 +104,10 @@ void InvisDemoPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
     }
 
+}
+
+void InvisDemoPluginProcessor::chassisAndEngine(juce::AudioBuffer<float>& buffer)
+{
     // THE CHASSIS RUNS THE BLOCK. Order, bypass and metering are its contract, not this file's:
     // everything between the ends is all a plugin gets to decide, and it says so by being the only
     // thing passed in.

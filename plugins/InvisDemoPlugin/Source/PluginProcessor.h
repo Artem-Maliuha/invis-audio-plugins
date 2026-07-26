@@ -46,6 +46,9 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    void synthesiseTestTone(juce::AudioBuffer<float>& buffer);
+    void chassisAndEngine(juce::AudioBuffer<float>& buffer);
+
     invis::modules::InputFilterDSP inputFilterDSP;
 
     double currentSampleRate { 44100.0 };

@@ -110,6 +110,16 @@ struct ConstellationNode {
      * Normalized 0..1 in the same units the sidebar filters use, so a star and the chassis speak
      * the same language.
      */
+    /**
+     * The algorithm's own knobs, normalized.
+     *
+     * ON THE NODE, not in the engine. The engine held them and that was enough to hear them and
+     * not enough to keep them: compare slots and the host's save both copy the chart's state tree,
+     * so anything living only in the DSP survived exactly until you pressed B.
+     */
+    static constexpr int kMaxStarParams = 6;
+    std::array<float, kMaxStarParams> effectParams { { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f } };
+
     float hpf { 0.0f };        // 0 = off
     float lpf { 1.0f };        // 1 = off
     float dryWet { 1.0f };     // a send slot is wet by default; the dry path is the chart's job
@@ -341,6 +351,21 @@ public:
     /** Same, but placed where you asked - used by the click-on-empty-sky offer. */
     int addNodeAt(const juce::String& label, juce::Colour colour, juce::Point<float> normalized);
     void removeNode(int index);
+
+    /** Every line, gone. The stars stay exactly where they are and each becomes its own send. */
+    void clearLinks();
+
+    /** Empty sky. */
+    void clearAll();
+
+    /**
+     * Removes the stars NOTHING REACHES - no observer feeds them and no chain carries into them.
+     *
+     * A chart accumulates these: you add a star to try it, drag the observer somewhere else, and it
+     * sits there costing an effect instance and a slice of every hue mixture while making no sound
+     * at all. Sweeping them is the difference between a chart you keep and one you restart.
+     */
+    int removeUnusedStars();
     void clearNodes();
     int getNumNodes() const { return static_cast<int>(nodes.size()); }
     const ConstellationNode& getNode(int index) const { return nodes[static_cast<size_t>(index)]; }
@@ -496,6 +521,9 @@ public:
      * Which leaves brightness free to mean only ENGAGEMENT: how much signal is actually running.
      */
     void setNodeSensitivity(int index, float amount);
+
+    /** One of the algorithm's own knobs. */
+    void setNodeEffectParam(int index, int paramIndex, float normalized);
 
     /** The block's own band limiting and mix. See ConstellationNode for the topology. */
     void setNodeHpf(int index, float normalized);

@@ -916,6 +916,10 @@ juce::ValueTree InvisConstellation::toValueTree() const
         star.setProperty("hpf", node.hpf, nullptr);
         star.setProperty("lpf", node.lpf, nullptr);
         star.setProperty("dryWet", node.dryWet, nullptr);
+
+        for (int k = 0; k < ConstellationNode::kMaxStarParams; ++k)
+            star.setProperty("p" + juce::String(k),
+                             node.effectParams[static_cast<size_t>(k)], nullptr);
         tree.appendChild(star, nullptr);
     }
 
@@ -963,6 +967,10 @@ void InvisConstellation::restoreFromValueTree(const juce::ValueTree& tree)
             node.hpf = static_cast<float>(child.getProperty("hpf", 0.0));
             node.lpf = static_cast<float>(child.getProperty("lpf", 1.0));
             node.dryWet = static_cast<float>(child.getProperty("dryWet", 1.0));
+
+            for (int k = 0; k < ConstellationNode::kMaxStarParams; ++k)
+                node.effectParams[static_cast<size_t>(k)] = static_cast<float>(
+                    child.getProperty("p" + juce::String(k), 0.5));
 
             nodes.push_back(node);
         }
@@ -1044,6 +1052,56 @@ bool InvisConstellation::isFreeSky(juce::Point<float> p) const
     // What is guarded above is what you could ACT on: a core, a collar, the observer, a line. The
     // offer must never steal a target. It has no business avoiding a glow.
     return true;
+}
+
+void InvisConstellation::clearLinks()
+{
+    if (links.empty()) return;
+
+    links.clear();
+    lastEntry[0] = lastEntry[1] = -1;
+    hoveredLink = -1;
+
+    if (onGeometryChanged) onGeometryChanged();
+    notifyWeights();
+    repaint();
+}
+
+void InvisConstellation::clearAll()
+{
+    if (nodes.empty() && links.empty()) return;
+
+    nodes.clear();
+    links.clear();
+    lastEntry[0] = lastEntry[1] = -1;
+    hoveredNode = hoveredLink = -1;
+
+    if (onGeometryChanged) onGeometryChanged();
+    notifyWeights();
+    repaint();
+}
+
+int InvisConstellation::removeUnusedStars()
+{
+    // Asked of EVERY observer, not just the first. In a split mode a star can be silent to one
+    // listener and the entire point of the other's chain, and sweeping it would be deleting
+    // something you are listening to.
+    std::vector<bool> reached(nodes.size(), false);
+
+    for (int p = 0; p < getNumObservers(); ++p)
+    {
+        const auto heard = getContributions(p);
+
+        for (size_t i = 0; i < heard.size() && i < reached.size(); ++i)
+            if (heard[i].glow > 0.004f) reached[i] = true;
+    }
+
+    // Highest index first, so the ones still to come do not shift under the loop.
+    int removed = 0;
+    for (int i = static_cast<int>(nodes.size()) - 1; i >= 0; --i)
+        if (!reached[static_cast<size_t>(i)]) { removeNode(i); ++removed; }
+
+    return removed;
 }
 
 void InvisConstellation::removeNode(int index)
@@ -1194,6 +1252,18 @@ void InvisConstellation::setNodeSensitivity(int index, float amount)
     if (onNodeChanged) onNodeChanged(index);
     if (onGeometryChanged) onGeometryChanged();
     notifyWeights();
+    repaint();
+}
+
+void InvisConstellation::setNodeEffectParam(int index, int paramIndex, float normalized)
+{
+    if (index < 0 || index >= static_cast<int>(nodes.size())) return;
+    if (paramIndex < 0 || paramIndex >= ConstellationNode::kMaxStarParams) return;
+
+    nodes[static_cast<size_t>(index)].effectParams[static_cast<size_t>(paramIndex)]
+        = juce::jlimit(0.0f, 1.0f, normalized);
+
+    if (onNodeChanged) onNodeChanged(index);
     repaint();
 }
 

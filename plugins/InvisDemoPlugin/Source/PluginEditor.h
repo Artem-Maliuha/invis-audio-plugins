@@ -137,17 +137,24 @@ private:
         invis::ui::InvisButton shuffleStarsButton;
         invis::ui::InvisButton shuffleSensButton;
         invis::ui::InvisButton shuffleObserverButton;
+        invis::ui::InvisButton deleteUnusedButton;
+        invis::ui::InvisButton deleteLinksButton;
+        invis::ui::InvisButton deleteAllButton;
 
         // Filled by resized(), read by paint(): a caption sits beside the group it names, and only
         // the layout knows where that ended up.
-        juce::Rectangle<int> modeCaption, addCaption, randomCaption;
+        juce::Rectangle<int> modeCaption, addCaption, randomCaption, deleteCaption;
     };
 
     /** The chassis's own dropdown - a menu here is part of the instrument, not of the host. */
     invis::ui::InvisPopupLookAndFeel popupLook;
 
     SkyTools skyTools { *this };
-    static constexpr int kSkyToolsHeight = 22;
+    // TWO ROWS. Four groups do not fit across the width of the sky, and a row that overruns just
+    // clips its left end off. Splitting by intent - what you MAKE above, what you CHANGE below -
+    // is a better division than wrapping wherever the pixels ran out.
+    static constexpr int kSkyToolsRowHeight = 22;
+    static constexpr int kSkyToolsHeight = 2 * kSkyToolsRowHeight + 4;
 
     /**
      * Inspector for one star. Lives in the PLUGIN, not in the atom: choosing which effect a star
