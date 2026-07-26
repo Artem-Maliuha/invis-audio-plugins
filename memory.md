@@ -18,6 +18,9 @@ Design and build a modular C++ (strictly JUCE 9) audio plugin monorepo for AU/VS
      - Control Body Diameter: $58\%$ of remaining knob bounds (`diameter = minArea * 0.58f`).
      - Value Label Proximity: Value text MUST sit directly below the control body with minimal gap ($\le 3\text{px}$) to eliminate dead space and keep controls tightly grouped.
    - **Centered Responsive Layout**: Sub-modules and container panels MUST scale dynamically with window bounds and stay centered (`withSizeKeepingCentre()`) or fill proportional grid cells without leaving unwanted asymmetric gaps.
+   - **Strict Proportionality Integrity Policy for Base UI Atoms (Заборона спотворення пропорцій базових елементів)**:
+     - NEVER scale, stretch, compress, or squish base UI atoms (`InvisKnob`, `InvisLEDMeter`, `InvisSwitch`, `InvisLED`) into unnatural or arbitrary aspect ratios to fit cramped layout spaces.
+     - UI atoms MUST ALWAYS strictly maintain their predefined design system proportions and size presets (`InvisKnobSize::XS`, `S`, `M`, `L`, `XL`). If layout space is tight, expand container bounds or reorganize component positioning, NEVER deform base UI atoms.
 
 2. **Dual Oversampling Engine (Online vs Offline)**:
    - Every plugin MUST include an oversampling module supporting independent settings for **Online** (realtime playback) and **Offline** (DAW bounce/export).
@@ -118,3 +121,6 @@ invis-audio-plugins/
 - [x] **Native Vector 3D Turned Titanium Shader**: High-precision vector lathe shader with 64 dense dark gunmetal micro-knurled teeth ($45^\circ$ studio light source), anisotropic metallic gradients, polished chamfer rim, and `InvisLED` phosphor dot pointer.
 - [x] **InvisKnobSize Preset Standard**: Implemented 5 size presets (`XS`, `S`, `M` default, `L`, `XL`). Within each size preset, font sizes of titles/values, LED dot radius, and track stroke width remain fixed/constant, while component bounds dictate physical dial diameter.
 - [x] **Universal Dual CLIP & DAW Metering Standard**: `InvisLEDMeter` with stationary segment columns, fixed 0 dB gold reference line, independent latching `CLIP L` / `CLIP R` lamps with click-reset physics, and channel mirroring.
+- [x] **Universal `InputSidebar` Functional Module Standard**: Integrated `InputSidebarDSP` and `InputSidebarUI` into `modules/invis_core/functional_modules/input_sidebar`. Provides a slim, full-height vertical input column containing 4 mandatory components: `INPUT` Trim (`InvisKnobSize::XS`), `InvisLEDMeter`, `HPF` (`InvisKnobSize::XS`), and `LPF` (`InvisKnobSize::XS`).
+- [x] **`InvisConstellation` Star-Chart Editor**: Flagship element of the CONSTELLATION series. Topology derived from drawn links (`StarLink`), components cut at bridges into serial stages and parallel clusters, enclosure taken as the union of cycle interiors, hue-wheel colour mixing, click-armed link building, sensitivity as a pie fill inside a transparent core.
+- [x] **Universal `OutputSidebar` Functional Module Standard**: Integrated `OutputSidebarDSP` and `OutputSidebarUI` into `modules/invis_core/functional_modules/output_sidebar`. Provides a slim, full-height vertical output column on the far right containing: `OUTPUT` Gain (`InvisKnobSize::XS` $-48\text{ dB} \dots +12\text{ dB}$) and Output Peak Meter (`InvisLEDMeter`).

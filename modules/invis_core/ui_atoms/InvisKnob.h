@@ -1,7 +1,9 @@
 #pragma once
 
 #include "InvisLED.h"
+#include "InvisLevelLamp.h"
 #include "../design_system/InvisThemeSupplier.h"
+#include "../design_system/InvisLayout.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
 #include <optional>
@@ -47,8 +49,72 @@ struct StickyPoint {
 };
 
 /**
+ * Absolute physical specification of one `InvisKnobSize` preset, in design pixels.
+ * Every value here is a constant: the preset IS the size. Nothing is derived from the
+ * bounds a caller happens to hand over.
+ */
+struct KnobMetrics {
+    float diameter;       // Dial body outer diameter (track centreline)
+    float trackWidth;     // Arc stroke width
+    float ledDotRadius;   // Pointer LED dot radius
+    float titleFontSize;
+    float valueFontSize;
+    float tickFontSize;
+    float tickLength;     // Radial length of a tick mark
+    float tickRingGap;    // Track outer edge -> tick mark start
+    float tickLabelGap;   // Tick mark end -> tick label ring
+    float titleGap;       // Title block -> top of dial area
+    float valueGap;       // Dial body bottom -> value text
+
+    // --- Dial body relief (all absolute, so a small knob gets a SMALL skirt) ---
+    float skirtWidth;     // Knurled grip ring (the "skirt") radial thickness
+    float rimGap;         // Chamfer gap between skirt, shadow moat and cap
+    float elevation;      // 3D drop-shadow projection multiplier
+    int   numTeeth;       // Knurl micro-ribs (fewer on small knobs, or they smear)
+
+    // --- Optional indicator lamp beside the title label ---
+    // The label->lamp gap is NOT here: it is the design-system token
+    // `invis::ui::layout::kIndicatorLabelGap`, shared by every label+indicator pair.
+    float lampDiameter;
+};
+
+/**
+ * Resolved geometry for one paint / hit-test pass. Computed once by `computeLayout()` and
+ * shared by `paint`, `mouseDown` and the inline editor so drawn pixels and hit zones can
+ * never drift apart.
+ */
+struct KnobLayout {
+    juce::Rectangle<float> content;    // Intrinsic rect, centred inside the local bounds
+    juce::Rectangle<float> titleArea;
+    juce::Rectangle<float> titleTextArea; // Text slot within titleArea (shrunk when a lamp is shown)
+    juce::Point<float> lampCentre;
+    float lampRadius { 0.0f };
+    juce::Rectangle<float> valueArea;
+    juce::Point<float> centre;         // Dial centre
+    float radius { 0.0f };
+    float trackWidth { 0.0f };
+    float ledDotRadius { 0.0f };
+    float titleFontSize { 0.0f };
+    float valueFontSize { 0.0f };
+    float tickFontSize { 0.0f };
+    float tickRadius { 0.0f };
+    float tickLength { 0.0f };
+    float labelRadius { 0.0f };
+    float tickLabelWidth { 0.0f };
+    float tickLabelHeight { 0.0f };
+    float skirtWidth { 0.0f };
+    float rimGap { 0.0f };
+    float elevation { 1.0f };
+    int   numTeeth { 56 };
+};
+
+/**
  * Stateless Presentational Vector Knob Atom.
  * Pure visual & interaction control. Zero dependency on AudioProcessor / APVTS.
+ *
+ * PROPORTIONALITY INTEGRITY: the atom has a fixed intrinsic size per `InvisKnobSize` preset
+ * and will NOT stretch, squash or shrink to fit arbitrary bounds. Hand it the wrong bounds and
+ * it renders centred at its intrinsic size and asserts in Debug. Use `setBoundsCentredIn()`.
  */
 class InvisKnob : public juce::Component, public juce::TextEditor::Listener {
 public:
@@ -111,6 +177,37 @@ public:
     std::function<void()> onDragStarted;
     std::function<void()> onDragEnded;
 
+    // --- Optional Indicator Lamp beside the title label ---
+    //
+    // Shows "did this control actually do any work": extinguished -> green -> amber -> red.
+    // Feed it a normalized 0..1 amount (filter energy removed, compressor gain reduction,
+    // clipper depth). Enabling it NEVER changes the knob's intrinsic size - the tick-label ring
+    // already governs the width, so the lamp is absorbed into the existing title row.
+    void setIndicatorLampVisible(bool shouldBeVisible) { indicatorVisible = shouldBeVisible; repaint(); }
+    bool isIndicatorLampVisible() const { return indicatorVisible; }
+
+    /** Powered state of the measured stage. `false` = bypassed -> dead socket. */
+    void setIndicatorActive(bool shouldBeActive)
+    {
+        if (indicatorActive == shouldBeActive) return;
+        indicatorActive = shouldBeActive;
+        if (!indicatorActive) indicatorBallistics.reset();
+        repaint();
+    }
+    bool isIndicatorActive() const { return indicatorActive; }
+
+    void setIndicatorLevel(float normalizedLevel)
+    {
+        indicatorBallistics.setTarget(normalizedLevel);
+        repaint();
+    }
+    float getIndicatorLevel() const { return indicatorBallistics.getTarget(); }
+
+    /** Advance the lamp's follower one frame. Drive from the editor's timer. */
+    void updateIndicatorBallistics(float deltaTimeSeconds = 0.016f);
+
+    void setIndicatorMountType(LEDMountType type) { indicatorMount = type; repaint(); }
+
     // Pointer LED Color Override
     void setPointerLedColor(juce::Colour color) { customPointerColor = color; repaint(); }
     void clearPointerLedColor() { customPointerColor.reset(); repaint(); }
@@ -138,6 +235,24 @@ public:
     // Knob Size Preset (XS, S, M, L, XL - Default: M)
     void setKnobSize(InvisKnobSize size) { knobSize = size; repaint(); }
     InvisKnobSize getKnobSize() const { return knobSize; }
+
+    // --- Intrinsic Sizing (Strict Proportionality Integrity) ---
+
+    /** Absolute physical spec of a size preset, in design pixels. */
+    static KnobMetrics getMetrics(InvisKnobSize size);
+
+    /** The one true size of a preset, in design pixels. Independent of any parent bounds. */
+    static juce::Point<int> getIntrinsicSize(InvisKnobSize size);
+    juce::Point<int> getIntrinsicSize() const { return getIntrinsicSize(knobSize); }
+
+    /** Places the knob at its intrinsic size, centred inside `area`. The only correct placer. */
+    void setBoundsCentredIn(juce::Rectangle<int> area)
+    {
+        setBounds(centreIntrinsic(area, getIntrinsicSize()));
+    }
+
+    /** Resolved geometry of the current paint pass. Shared by rendering and hit-testing. */
+    KnobLayout computeLayout() const;
 
     // Theme Overrides
     void setThemeOverride(const InvisTheme& theme) { customTheme = theme; repaint(); }
@@ -179,6 +294,12 @@ private:
     std::vector<ScaleTick> scaleTicks;
     std::vector<StickyPoint> stickyPoints;
     LEDBallistics pointerLedBallistics;
+
+    bool indicatorVisible { false };
+    bool indicatorActive { true };
+    LEDMountType indicatorMount { LEDMountType::ProtrudingDome };
+    LampBallistics indicatorBallistics;
+
     std::function<juce::String(float)> valueFormatter;
     std::function<float(const juce::String&)> valueParser;
 

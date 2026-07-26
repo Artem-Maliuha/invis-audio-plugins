@@ -1,7 +1,167 @@
 #include "InvisKnob.h"
+#include <algorithm>
 #include <cmath>
 
 namespace invis::ui {
+
+namespace {
+
+// Canonical pointer sweep: 220deg .. 500deg, i.e. +-140deg around 12 o'clock. Intrinsic sizing
+// is always computed from this sweep so a preset's footprint is a constant, even if a caller
+// narrows the range via setAngleRange().
+constexpr float kSweepHalfSpanDeg = 140.0f;
+
+// Worst-case tick-label INK extents, as multiples of the tick font size. The drawn label
+// rectangle is deliberately generous (text is centred inside it, so it never truncates), which
+// makes it useless for footprint maths - only the ink actually occupies space.
+constexpr float kTickInkHalfWidthRatio  = 1.25f; // ~4 glyphs
+constexpr float kTickInkHalfHeightRatio = 0.70f;
+
+/** Everything the intrinsic size and the paint layout both need, derived once from metrics. */
+struct KnobFootprint {
+    float radius;
+    float tickRadius;
+    float labelRadius;
+    float tickLabelWidth;
+    float tickLabelHeight;
+    float titleHeight;
+    float valueHeight;
+    float valueWidth;
+    float upExtent;    // Dial centre -> top of the occupied area
+    float downExtent;  // Dial centre -> bottom of the occupied area
+    float halfWidth;
+    int width;
+    int height;
+};
+
+KnobFootprint computeFootprint(const KnobMetrics& m)
+{
+    KnobFootprint f;
+
+    f.radius      = m.diameter * 0.5f;
+    f.tickRadius  = f.radius + m.trackWidth * 0.5f + m.tickRingGap;
+    f.labelRadius = f.tickRadius + m.tickLength + m.tickLabelGap;
+
+    f.tickLabelWidth  = std::max(36.0f, m.tickFontSize * 3.8f);
+    f.tickLabelHeight = std::max(16.0f, m.tickFontSize * 1.4f);
+
+    f.titleHeight = m.titleFontSize * 1.35f;
+    f.valueHeight = m.valueFontSize * 1.35f;
+    f.valueWidth  = std::max(42.0f, m.valueFontSize * 4.2f);
+
+    const float inkHalfW  = m.tickFontSize * kTickInkHalfWidthRatio;
+    const float inkHalfH  = m.tickFontSize * kTickInkHalfHeightRatio;
+    const float trackEdge = f.radius + m.trackWidth * 0.5f;
+
+    // Horizontally the sweep crosses +-90deg, so labels reach the full label radius sideways.
+    f.halfWidth = std::max({ f.labelRadius + inkHalfW, trackEdge, f.valueWidth * 0.5f });
+
+    // Straight up (0deg) is inside the sweep, so the top reaches the full label radius. Downwards
+    // the sweep stops at +-140deg, so the lowest label only reaches cos(140deg) of it - but the
+    // value readout sits below the dial body and usually wins.
+    const float downFactor = std::abs(std::cos(juce::degreesToRadians(kSweepHalfSpanDeg)));
+
+    f.upExtent   = std::max(f.labelRadius + inkHalfH, trackEdge);
+    f.downExtent = std::max(f.labelRadius * downFactor + inkHalfH,
+                            trackEdge + m.valueGap + f.valueHeight);
+
+    f.width  = static_cast<int>(std::ceil(f.halfWidth * 2.0f));
+    f.height = static_cast<int>(std::ceil(f.titleHeight + m.titleGap + f.upExtent + f.downExtent));
+
+    return f;
+}
+
+} // namespace
+
+KnobMetrics InvisKnob::getMetrics(InvisKnobSize size)
+{
+    // The skirt, rim chamfers and 3D elevation are absolute per preset and shrink WITH the dial:
+    // deriving them from a ratio + a floor (the old max(3.8f, r * 0.16f)) made small knobs wear a
+    // disproportionately fat grip ring - 28% of the body on XS against 16% on XL.
+    //
+    //        diameter  track  led   title  value  tick  tickLen  ringGap  labelGap  titleGap  valueGap  skirt  rimGap  elev  teeth  lampDia
+    switch (size)
+    {
+        // XS: the tick ring needs a wider standoff than a pure ratio would suggest - the label
+        // BOX is centred on the ring, so a 3-glyph label like "OFF" reaches back toward the dial
+        // and collides with the skirt unless the ring is pushed clear.
+        case InvisKnobSize::XS: return {  34.0f, 2.0f, 3.0f,  9.5f, 10.5f,  8.0f, 2.5f, 2.5f, 7.0f, 2.0f, 3.0f, 2.2f, 0.6f, 0.40f, 36,  5.0f };
+        case InvisKnobSize::S:  return {  46.0f, 2.4f, 3.4f, 10.0f, 11.0f,  8.5f, 3.0f, 2.0f, 6.0f, 2.0f, 3.0f, 3.0f, 0.8f, 0.60f, 44,  6.0f };
+        case InvisKnobSize::L:  return {  84.0f, 3.6f, 4.8f, 13.5f, 14.5f, 11.0f, 4.0f, 3.0f, 8.0f, 3.0f, 3.0f, 5.6f, 1.3f, 1.40f, 64,  8.5f };
+        case InvisKnobSize::XL: return { 110.0f, 4.5f, 5.8f, 15.5f, 17.5f, 12.5f, 5.0f, 3.5f, 9.0f, 4.0f, 3.0f, 7.2f, 1.6f, 1.80f, 76, 10.0f };
+        case InvisKnobSize::M:
+        default:                return {  62.0f, 2.8f, 4.0f, 11.5f, 12.5f,  9.5f, 3.5f, 2.5f, 7.0f, 3.0f, 3.0f, 4.2f, 1.0f, 1.00f, 56,  7.0f };
+    }
+}
+
+juce::Point<int> InvisKnob::getIntrinsicSize(InvisKnobSize size)
+{
+    const auto f = computeFootprint(getMetrics(size));
+    return { f.width, f.height };
+}
+
+KnobLayout InvisKnob::computeLayout() const
+{
+    const auto m = getMetrics(knobSize);
+    const auto f = computeFootprint(m);
+
+    KnobLayout l;
+    l.content         = centreIntrinsic(getLocalBounds().toFloat(), { f.width, f.height });
+    l.radius          = f.radius;
+    l.trackWidth      = m.trackWidth;
+    l.ledDotRadius    = m.ledDotRadius;
+    l.titleFontSize   = m.titleFontSize;
+    l.valueFontSize   = m.valueFontSize;
+    l.tickFontSize    = m.tickFontSize;
+    l.tickRadius      = f.tickRadius;
+    l.tickLength      = m.tickLength;
+    l.labelRadius     = f.labelRadius;
+    l.tickLabelWidth  = f.tickLabelWidth;
+    l.tickLabelHeight = f.tickLabelHeight;
+    l.skirtWidth      = m.skirtWidth;
+    l.rimGap          = m.rimGap;
+    l.elevation       = m.elevation;
+    l.numTeeth        = m.numTeeth;
+
+    auto area = l.content;
+    l.titleArea = area.removeFromTop(f.titleHeight);
+    area.removeFromTop(m.titleGap);
+
+    // Title row. With a lamp the row becomes [text][gap][lamp] laid out as ONE centred unit, so
+    // the pair stays optically centred whatever the label length ("HPF" vs "DRY/WET"). The knob's
+    // intrinsic width is governed by the tick-label ring, which is far wider than any title, so
+    // absorbing the lamp here never changes the atom's footprint.
+    l.lampRadius = m.lampDiameter * 0.5f;
+
+    if (indicatorVisible && labelText.isNotEmpty())
+    {
+        const juce::Font titleFont(juce::FontOptions(m.titleFontSize, juce::Font::bold));
+        const float textWidth = juce::GlyphArrangement::getStringWidth(titleFont, labelText);
+        const float unitWidth = textWidth + layout::kIndicatorLabelGap + m.lampDiameter;
+        const float unitLeft  = l.titleArea.getCentreX() - unitWidth * 0.5f;
+
+        l.titleTextArea = juce::Rectangle<float>(unitLeft, l.titleArea.getY(),
+                                                 textWidth, l.titleArea.getHeight());
+        l.lampCentre    = { unitLeft + textWidth + layout::kIndicatorLabelGap + l.lampRadius,
+                            l.titleArea.getCentreY() };
+    }
+    else
+    {
+        l.titleTextArea = l.titleArea;
+        l.lampCentre    = l.titleArea.getCentre();
+    }
+
+    l.centre = { l.content.getCentreX(), area.getY() + f.upExtent };
+
+    l.valueArea = juce::Rectangle<float>(
+        l.centre.x - f.valueWidth * 0.5f,
+        l.centre.y + f.radius + m.trackWidth * 0.5f + m.valueGap,
+        f.valueWidth,
+        f.valueHeight
+    );
+
+    return l;
+}
 
 InvisKnob::InvisKnob()
 {
@@ -117,70 +277,35 @@ void InvisKnob::paint(juce::Graphics& g)
 
     const juce::String displayText = getEffectiveValueText();
 
-    // Preset Size Specifications (XS, S, M, L, XL - Default: M)
-    float titleFontSize = 11.5f;
-    float valueFontSize = 12.5f;
-    float fixedLedDotRadius = 4.0f;
-    float fixedTrackWidth = 2.8f;
-    float diameterRatio = 0.58f;
+    // Single source of geometric truth: identical maths feeds rendering and hit-testing, and the
+    // atom always draws at its intrinsic size centred in whatever bounds it was given, so it can
+    // never be stretched, squashed or shrunk by its container.
+    const auto layout = computeLayout();
 
-    switch (knobSize)
-    {
-        case InvisKnobSize::XS:
-            titleFontSize = 9.5f;
-            valueFontSize = 10.5f;
-            fixedLedDotRadius = 3.0f;
-            fixedTrackWidth = 2.0f;
-            diameterRatio = 0.52f;
-            break;
-        case InvisKnobSize::S:
-            titleFontSize = 10.0f;
-            valueFontSize = 11.0f;
-            fixedLedDotRadius = 3.4f;
-            fixedTrackWidth = 2.4f;
-            diameterRatio = 0.60f;
-            break;
-        case InvisKnobSize::M:
-        default:
-            titleFontSize = 11.5f;
-            valueFontSize = 12.5f;
-            fixedLedDotRadius = 4.0f;
-            fixedTrackWidth = 2.8f;
-            diameterRatio = 0.68f;
-            break;
-        case InvisKnobSize::L:
-            titleFontSize = 13.5f;
-            valueFontSize = 14.5f;
-            fixedLedDotRadius = 4.8f;
-            fixedTrackWidth = 3.6f;
-            diameterRatio = 0.78f;
-            break;
-        case InvisKnobSize::XL:
-            titleFontSize = 15.5f;
-            valueFontSize = 17.5f;
-            fixedLedDotRadius = 5.8f;
-            fixedTrackWidth = 4.5f;
-            diameterRatio = 0.88f;
-            break;
-    }
-
-    const float labelHeight = labelText.isNotEmpty() ? titleFontSize * 1.35f : 0.0f;
-    const float valueHeight = displayText.isNotEmpty() ? valueFontSize * 1.35f : 0.0f;
-
-    const auto knobArea = bounds.withTrimmedTop(labelHeight).withTrimmedBottom(valueHeight);
-    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) * diameterRatio;
-    if (diameter <= 0.0f) return;
-
-    const auto center = knobArea.getCentre();
-    const float radius = diameter * 0.5f;
-    const float dynamicTrackWidth = fixedTrackWidth;
+    const auto center = layout.centre;
+    const float radius = layout.radius;
+    const float dynamicTrackWidth = layout.trackWidth;
+    const float titleFontSize = layout.titleFontSize;
+    const float valueFontSize = layout.valueFontSize;
+    const float fixedLedDotRadius = layout.ledDotRadius;
 
     // Draw Top Title Label with Constant Font Size
     if (labelText.isNotEmpty())
     {
         g.setColour(theme.textPrimary);
         g.setFont(juce::FontOptions(titleFontSize, juce::Font::bold));
-        g.drawText(labelText, bounds.removeFromTop(labelHeight), juce::Justification::centred, true);
+        g.drawText(labelText, layout.titleTextArea, juce::Justification::centred, true);
+    }
+
+    // Indicator lamp beside the title. Drawn inline rather than as a child component so the
+    // volumetric spill lands on the knob's own surface instead of being clipped at a child edge.
+    if (indicatorVisible)
+    {
+        const float lampLevel = indicatorBallistics.getCurrent();
+
+        InvisLevelLamp::drawLamp(g, layout.lampCentre, layout.lampRadius,
+                                 lampLevel, lamp::getLuminance(lampLevel),
+                                 indicatorActive, indicatorMount);
     }
 
     // Arc Angles Setup with Customizable Angle Range (in Degrees)
@@ -273,11 +398,11 @@ void InvisKnob::paint(juce::Graphics& g)
         g.strokePath(valuePath, juce::PathStrokeType(std::max(0.8f, dynamicTrackWidth * 0.35f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // Draw Scale Ticks & Labels around knob (Proportional Projections)
-    const float tickLength = std::max(2.5f, radius * 0.08f);
-    const float tickRadius = radius + dynamicTrackWidth * 0.5f + std::max(2.0f, radius * 0.05f);
-    const float labelRadius = tickRadius + tickLength + std::max(6.0f, radius * 0.22f);
-    const float tickFontSize = std::clamp(radius * 0.22f, 9.0f, 15.0f);
+    // Draw Scale Ticks & Labels around knob (constant ring geometry from the size preset)
+    const float tickLength   = layout.tickLength;
+    const float tickRadius   = layout.tickRadius;
+    const float labelRadius  = layout.labelRadius;
+    const float tickFontSize = layout.tickFontSize;
 
     for (const auto& tick : scaleTicks)
     {
@@ -307,8 +432,8 @@ void InvisKnob::paint(juce::Graphics& g)
                 center.y - std::cos(tickAngle) * labelRadius
             );
 
-            const float tickRectWidth = std::max(36.0f, tickFontSize * 3.8f);
-            const float tickRectHeight = std::max(16.0f, tickFontSize * 1.4f);
+            const float tickRectWidth = layout.tickLabelWidth;
+            const float tickRectHeight = layout.tickLabelHeight;
 
             juce::Rectangle<float> labelRect(labelCenter.x - tickRectWidth * 0.5f, labelCenter.y - tickRectHeight * 0.5f, tickRectWidth, tickRectHeight);
             g.setFont(juce::FontOptions(tickFontSize, tick.isOff ? juce::Font::bold : juce::Font::plain));
@@ -398,13 +523,16 @@ void InvisKnob::paint(juce::Graphics& g)
         }
         else
         {
-            // 1. Physical 3D Elevation Drop Shadows onto chassis faceplate (Casting 8mm height projection down-right)
+            // 1. Physical 3D Elevation Drop Shadows onto chassis faceplate (projection down-right).
+            //    Offsets scale with the preset so a small knob sits low, a large knob stands proud.
+            const float elev = layout.elevation;
+
             g.setColour(juce::Colours::black.withAlpha(0.40f));
-            g.fillEllipse(center.x - innerRadius + 4.0f, center.y - innerRadius + 7.0f, innerRadius * 2.0f, innerRadius * 2.0f);
+            g.fillEllipse(center.x - innerRadius + 4.0f * elev, center.y - innerRadius + 7.0f * elev, innerRadius * 2.0f, innerRadius * 2.0f);
             g.setColour(juce::Colours::black.withAlpha(0.65f));
-            g.fillEllipse(center.x - innerRadius + 2.0f, center.y - innerRadius + 4.5f, innerRadius * 2.0f, innerRadius * 2.0f);
+            g.fillEllipse(center.x - innerRadius + 2.0f * elev, center.y - innerRadius + 4.5f * elev, innerRadius * 2.0f, innerRadius * 2.0f);
             g.setColour(juce::Colours::black.withAlpha(0.85f));
-            g.fillEllipse(center.x - innerRadius + 1.0f, center.y - innerRadius + 2.5f, innerRadius * 2.0f, innerRadius * 2.0f);
+            g.fillEllipse(center.x - innerRadius + 1.0f * elev, center.y - innerRadius + 2.5f * elev, innerRadius * 2.0f, innerRadius * 2.0f);
 
             // 2. Outer Flange Skirt Rim (Polished Dark Bakelite & Vintage Bronze Base)
             const auto skirtGradient = juce::ColourGradient(
@@ -415,10 +543,10 @@ void InvisKnob::paint(juce::Graphics& g)
             g.setGradientFill(skirtGradient);
             g.fillEllipse(center.x - innerRadius, center.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f);
 
-            // 3. 3D Dark Bakelite Knurled Grip Ring (64 Dense Micro-Rib Teeth)
-            const float knurlOuterR = innerRadius - 1.0f;
-            const float knurlInnerR = knurlOuterR - std::max(3.8f, innerRadius * 0.16f);
-            const int numTeeth = 64;
+            // 3. 3D Dark Bakelite Knurled Grip Ring ("skirt") - constant thickness per size preset
+            const float knurlOuterR = innerRadius - layout.rimGap;
+            const float knurlInnerR = std::max(innerRadius * 0.25f, knurlOuterR - layout.skirtWidth);
+            const int numTeeth = layout.numTeeth;
 
             for (int i = 0; i < numTeeth; ++i)
             {
@@ -441,7 +569,7 @@ void InvisKnob::paint(juce::Graphics& g)
             }
 
             // 4. Deep Recessed Shadow Moat under Ivory Cap
-            const float moatRadius = knurlInnerR - 1.0f;
+            const float moatRadius = knurlInnerR - layout.rimGap;
             if (moatRadius > 0.0f)
             {
                 g.setColour(juce::Colour::fromRGB(12, 10, 8));
@@ -449,15 +577,15 @@ void InvisKnob::paint(juce::Graphics& g)
             }
 
             // 5. Photorealistic Almost Black Carbon-Obsidian Cap with Fine CNC Micro-Texture
-            const float capRadius = moatRadius - std::max(1.0f, innerRadius * 0.04f);
+            const float capRadius = moatRadius - layout.rimGap;
             if (capRadius > 0.0f)
             {
-                const float heightShiftY = -1.8f; // Optical 3D Perspective Elevation
+                const float heightShiftY = -1.8f * elev; // Optical 3D Perspective Elevation
                 const juce::Point<float> capCenter(center.x, center.y + heightShiftY);
 
                 // 3D Drop Shadow under Carbon cap
                 g.setColour(juce::Colours::black.withAlpha(0.75f));
-                g.fillEllipse(capCenter.x - capRadius, capCenter.y - capRadius + 2.5f, capRadius * 2.0f, capRadius * 2.0f);
+                g.fillEllipse(capCenter.x - capRadius, capCenter.y - capRadius + 2.5f * elev, capRadius * 2.0f, capRadius * 2.0f);
 
                 // Photorealistic Almost Black Anodized Obsidian-Carbon Cap Gradient
                 const auto capGradient = juce::ColourGradient(
@@ -477,11 +605,14 @@ void InvisKnob::paint(juce::Graphics& g)
                     g.drawEllipse(capCenter.x - r + 0.4f, capCenter.y - r + 0.4f, r * 2.0f, r * 2.0f, 0.40f);
                 }
 
-                // Polished Vintage Bronze / Gunmetal Bevel Rim Edge
+                // Polished Vintage Bronze / Gunmetal Bevel Rim Edge (thins down with the preset)
+                const float bevelStroke = std::max(0.6f, 1.25f * elev);
+                const float bevelInset  = std::max(0.4f, 0.75f * elev);
+
                 g.setColour(juce::Colour::fromRGB(180, 155, 125).withAlpha(0.65f));
-                g.drawEllipse(capCenter.x - capRadius, capCenter.y - capRadius, capRadius * 2.0f, capRadius * 2.0f, 1.25f);
+                g.drawEllipse(capCenter.x - capRadius, capCenter.y - capRadius, capRadius * 2.0f, capRadius * 2.0f, bevelStroke);
                 g.setColour(juce::Colours::black.withAlpha(0.70f));
-                g.drawEllipse(capCenter.x - capRadius + 0.75f, capCenter.y - capRadius + 0.75f, (capRadius - 0.75f) * 2.0f, (capRadius - 0.75f) * 2.0f, 1.0f);
+                g.drawEllipse(capCenter.x - capRadius + bevelInset, capCenter.y - capRadius + bevelInset, (capRadius - bevelInset) * 2.0f, (capRadius - bevelInset) * 2.0f, std::max(0.5f, 1.0f * elev));
 
                 // 6. Encapsulated 3D Circular LED Dot Pointer in Recessed Bronze Collar
                 const float pointerR = capRadius * 0.70f;
@@ -506,12 +637,10 @@ void InvisKnob::paint(juce::Graphics& g)
     }
 
     // Store & Draw Value Text directly below the dial face (Tight Proximity & Accent Color)
+    valueTextArea = layout.valueArea;
+
     if (displayText.isNotEmpty())
     {
-        const float textWidth = std::max(42.0f, valueFontSize * 4.2f);
-        const float textY = center.y + radius + dynamicTrackWidth * 0.5f + 3.0f;
-        valueTextArea = juce::Rectangle<float>(center.x - textWidth * 0.5f, textY, textWidth, valueHeight);
-
         g.setColour(isOffState ? theme.accentSecondary : activeAccentColor);
         g.setFont(juce::FontOptions(valueFontSize, isOffState ? juce::Font::bold : juce::Font::plain));
         g.drawText(displayText, valueTextArea, juce::Justification::centred, true);
@@ -524,8 +653,28 @@ void InvisKnob::paint(juce::Graphics& g)
     }
 }
 
+void InvisKnob::updateIndicatorBallistics(float deltaTimeSeconds)
+{
+    if (!indicatorVisible) return;
+
+    const float before = indicatorBallistics.getCurrent();
+    indicatorBallistics.update(deltaTimeSeconds);
+
+    if (std::abs(indicatorBallistics.getCurrent() - before) > 0.0008f)
+        repaint();
+}
+
 void InvisKnob::resized()
 {
+    // STRICT PROPORTIONALITY INTEGRITY: a size preset IS a size. If this fires, a container laid
+    // the knob out with an arbitrary rect instead of setBoundsCentredIn() / getIntrinsicSize().
+    // The knob will render correctly regardless (it letterboxes inside the given bounds) - the
+    // assert exists so the layout bug is visible at development time rather than shipped.
+    const auto intrinsic = getIntrinsicSize();
+    jassert(getWidth() == 0 || (getWidth() == intrinsic.x && getHeight() == intrinsic.y));
+
+    valueTextArea = computeLayout().valueArea;
+
     if (inlineEditor != nullptr)
     {
         inlineEditor->setBounds(valueTextArea.toNearestInt());
@@ -540,19 +689,14 @@ void InvisKnob::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
-    // Check if user clicked directly on any ScaleTick label or mark
-    auto bounds = getLocalBounds().toFloat();
-    const juce::String displayText = getEffectiveValueText();
-    const float labelHeight = labelText.isNotEmpty() ? std::max(14.0f, bounds.getHeight() * 0.15f) : 0.0f;
-    const float valueHeight = displayText.isNotEmpty() ? std::max(12.0f, bounds.getHeight() * 0.14f) : 0.0f;
-    const auto knobArea = bounds.withTrimmedTop(labelHeight).withTrimmedBottom(valueHeight);
-    const float diameter = std::min(knobArea.getWidth(), knobArea.getHeight()) * 0.55f;
+    // Check if user clicked directly on any ScaleTick label or mark.
+    // Uses the exact same layout as paint() - previously this recomputed the geometry with
+    // different constants, so the hit zones drifted away from the drawn labels.
+    const auto layout = computeLayout();
 
-    if (diameter > 0.0f)
+    if (layout.radius > 0.0f)
     {
-        const auto center = knobArea.getCentre();
-        const float radius = diameter * 0.5f;
-        const float dynamicTrackWidth = std::max(2.5f, diameter * 0.08f);
+        const auto center = layout.centre;
 
         const float totalStartAngle = juce::degreesToRadians(startAngleDegrees);
         const float totalEndAngle   = juce::degreesToRadians(endAngleDegrees);
@@ -564,12 +708,9 @@ void InvisKnob::mouseDown(const juce::MouseEvent& e)
         if (offPosition == OffPosition::Start) activeStartAngle = totalStartAngle + gapAngle;
         else if (offPosition == OffPosition::End) activeEndAngle = totalEndAngle - gapAngle;
 
-        const float tickLength = std::max(2.5f, radius * 0.08f);
-        const float tickRadius = radius + dynamicTrackWidth * 0.5f + std::max(2.0f, radius * 0.05f);
-        const float labelRadius = tickRadius + tickLength + std::max(6.0f, radius * 0.22f);
-        const float tickFontSize = std::clamp(radius * 0.22f, 9.0f, 15.0f);
-        const float tickRectWidth = std::max(36.0f, tickFontSize * 3.8f);
-        const float tickRectHeight = std::max(16.0f, tickFontSize * 1.4f);
+        const float labelRadius = layout.labelRadius;
+        const float tickRectWidth = layout.tickLabelWidth;
+        const float tickRectHeight = layout.tickLabelHeight;
 
         for (const auto& tick : scaleTicks)
         {

@@ -1,13 +1,23 @@
 #include "invis_core.h"
 
 // UI Atoms implementation
+#include "ui_atoms/InvisButton.cpp"
 #include "ui_atoms/InvisCellSelector.cpp"
 #include "ui_atoms/InvisKnob.cpp"
 #include "ui_atoms/InvisLED.cpp"
+#include "ui_atoms/InvisLevelLamp.cpp"
+#include "ui_atoms/InvisConstellation.cpp"
 #include "ui_atoms/InvisLEDMeter.cpp"
+#include "ui_atoms/InvisStepperField.cpp"
 
 // Functional Modules implementation
 #include "functional_modules/input_filter/InputFilterDSP.cpp"
 #include "functional_modules/input_filter/InputFilterUI.cpp"
+#include "functional_modules/input_sidebar/InputSidebarDSP.cpp"
+#include "functional_modules/input_sidebar/InputSidebarUI.cpp"
+#include "functional_modules/output_sidebar/OutputSidebarDSP.cpp"
+#include "functional_modules/output_sidebar/OutputSidebarUI.cpp"
+#include "functional_modules/top_sidebar/TopSidebarDSP.cpp"
+#include "functional_modules/top_sidebar/TopSidebarUI.cpp"
 #include "functional_modules/oversampling/OversamplingDSP.cpp"
 #include "functional_modules/midi_learn/MidiLearnModule.cpp"

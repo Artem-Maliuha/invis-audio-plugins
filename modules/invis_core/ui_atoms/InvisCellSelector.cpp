@@ -41,6 +41,9 @@ void InvisCellSelector::setSelectedIndex(int index, juce::NotificationType notif
 
 juce::String InvisCellSelector::getSelectedItemText() const
 {
+    if (displayOverride.isNotEmpty())
+        return displayOverride;
+
     if (selectedIndex >= 0 && selectedIndex < static_cast<int>(items.size()))
     {
         return items[static_cast<size_t>(selectedIndex)];
@@ -48,10 +51,44 @@ juce::String InvisCellSelector::getSelectedItemText() const
     return {};
 }
 
+void InvisCellSelector::showItemPopup()
+{
+    juce::PopupMenu menu;
+    const bool structured = (onBuildPopup != nullptr);
+
+    if (structured)
+        onBuildPopup(menu);
+    else
+        for (size_t i = 0; i < items.size(); ++i)
+            menu.addItem(static_cast<int>(i) + 1, items[i], true, static_cast<int>(i) == selectedIndex);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMinimumWidth(getWidth()),
+                       [this, structured](int result) {
+                           isPressed = false;
+
+                           if (result > 0)
+                           {
+                               if (structured)
+                               {
+                                   if (onPopupResult != nullptr) onPopupResult(result);
+                               }
+                               else
+                               {
+                                   setSelectedIndex(result - 1, juce::sendNotificationSync);
+                               }
+                           }
+
+                           repaint();
+                       });
+}
+
 void InvisCellSelector::mouseDown(const juce::MouseEvent&)
 {
     isPressed = true;
     repaint();
+
+    if (popupMode)
+        showItemPopup();
 }
 
 void InvisCellSelector::mouseDrag(const juce::MouseEvent&)
@@ -61,6 +98,8 @@ void InvisCellSelector::mouseDrag(const juce::MouseEvent&)
 
 void InvisCellSelector::mouseUp(const juce::MouseEvent& e)
 {
+    if (popupMode) return; // the popup callback owns the selection
+
     if (isPressed && getLocalBounds().contains(e.getPosition()) && !items.empty())
     {
         const int nextIdx = (selectedIndex + 1) % static_cast<int>(items.size());
@@ -73,7 +112,7 @@ void InvisCellSelector::mouseUp(const juce::MouseEvent& e)
 
 void InvisCellSelector::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
-    if (wheel.deltaY == 0.0f || items.empty()) return;
+    if (popupMode || wheel.deltaY == 0.0f || items.empty()) return;
 
     const int direction = (wheel.deltaY > 0.0f) ? 1 : -1;
     int nextIdx = selectedIndex + direction;
@@ -139,8 +178,10 @@ void InvisCellSelector::paint(juce::Graphics& g)
     const float valueH = innerPadding.getBottom() - valueY;
     const auto valueBounds = juce::Rectangle<float>(innerPadding.getX(), valueY, innerPadding.getWidth(), valueH);
 
-    const float fontH = std::clamp(valueH * 0.85f, 9.0f, 12.0f);
-    g.setFont(juce::FontOptions("Courier New", fontH, juce::Font::bold));
+    // Segment-display typeface for the value. Uppercase only, which is what the face supports
+    // and what a hardware readout does anyway.
+    const float fontH = std::clamp(valueH * 0.80f, 8.5f, 13.0f);
+    g.setFont(InvisFonts::getDisplayFont(fontH));
 
     // Cubic ease-out transition curve
     const float t = std::sin(animProgress * juce::MathConstants<float>::halfPi);
@@ -152,23 +193,21 @@ void InvisCellSelector::paint(juce::Graphics& g)
     if (animProgress < 1.0f && previousIndex >= 0 && previousIndex < static_cast<int>(items.size()))
     {
         g.setColour(theme.textSecondary.withAlpha(0.65f * (1.0f - t)));
-        g.drawText(items[static_cast<size_t>(previousIndex)], valueBounds.translated(0.0f, -slideOffset), juce::Justification::centredLeft, true);
+        g.drawText(items[static_cast<size_t>(previousIndex)].toUpperCase(),
+                   valueBounds.translated(0.0f, -slideOffset), valueJustification, false);
     }
 
-    // New item sliding up from below & fading in with HIGH-INTENSITY DOUBLE PHOSPHOR RADIANCE GLOW
+    // New item sliding up from below, with the phosphor radiance the rest of the chassis uses
     const float newAlpha = (animProgress < 1.0f) ? t : 1.0f;
-    const juce::String textToDraw = getSelectedItemText();
+    const juce::String textToDraw = getSelectedItemText().toUpperCase();
 
-    // Pass A: Emissive Neon Phosphor Ambient Glow Halo behind text (amplified by ledLuminance spike)
     const float haloAlpha = std::min(0.95f, 0.45f * newAlpha * ledLuminance);
     g.setColour(accent.withAlpha(haloAlpha));
-    g.drawText(textToDraw, valueBounds.translated(-0.75f, -0.75f + slideOffset * 0.5f), juce::Justification::centredLeft, true);
-    g.drawText(textToDraw, valueBounds.translated(0.75f, 0.75f + slideOffset * 0.5f), juce::Justification::centredLeft, true);
-    g.drawText(textToDraw, valueBounds.translated(0.0f, 1.0f + slideOffset * 0.5f), juce::Justification::centredLeft, true);
+    g.drawText(textToDraw, valueBounds.translated(-0.75f, -0.75f + slideOffset * 0.5f), valueJustification, false);
+    g.drawText(textToDraw, valueBounds.translated(0.75f, 0.75f + slideOffset * 0.5f), valueJustification, false);
 
-    // Pass B: Crisp High-Intensity Phosphor Core Technical Text
     g.setColour(accent.brighter(0.20f).withAlpha(newAlpha));
-    g.drawText(textToDraw, valueBounds.translated(0.0f, slideOffset * 0.5f), juce::Justification::centredLeft, true);
+    g.drawText(textToDraw, valueBounds.translated(0.0f, slideOffset * 0.5f), valueJustification, false);
 }
 
 } // namespace invis::ui

@@ -137,24 +137,32 @@ void InputFilterUI::paint(juce::Graphics& g)
     g.setColour(theme.knobTrackBg);
     g.drawRoundedRectangle(bounds.reduced(1.0f), theme.cornerRadius, 1.0f);
 
-    // Section title scaling proportionally with component height
-    const float titleHeight = std::max(16.0f, bounds.getHeight() * 0.14f);
-    const float titleFontSize = std::max(9.0f, titleHeight * 0.65f);
-
+    // Section title: constant design-pixel type, scaled by the editor's global zoom
     g.setColour(theme.textSecondary);
-    g.setFont(juce::FontOptions(titleFontSize, juce::Font::bold));
-    g.drawText("INPUT FILTER", bounds.removeFromTop(titleHeight), juce::Justification::centred, true);
+    g.setFont(juce::FontOptions(kTitleFontSize, juce::Font::bold));
+    g.drawText("INPUT FILTER", bounds.removeFromTop(static_cast<float>(kTitleHeight)),
+               juce::Justification::centred, true);
+}
+
+juce::Point<int> InputFilterUI::getIntrinsicSize()
+{
+    const auto knob = ui::InvisKnob::getIntrinsicSize(kKnobSize);
+
+    return { 2 * kPadding + 2 * knob.x + ui::layout::kGapS,
+             2 * kPadding + kTitleHeight + knob.y };
 }
 
 void InputFilterUI::resized()
 {
-    auto bounds = getLocalBounds().reduced(8);
-    const int titleHeight = juce::roundToInt(bounds.getHeight() * 0.14f);
-    bounds.removeFromTop(titleHeight); // Proportional title offset
+    // Design-pixel layout: both knobs sit at their intrinsic S size, side by side.
+    const auto knob = ui::InvisKnob::getIntrinsicSize(kKnobSize);
 
-    const int knobWidth = bounds.getWidth() / 2;
-    hpfKnob.setBounds(bounds.removeFromLeft(knobWidth).reduced(4));
-    lpfKnob.setBounds(bounds.reduced(4));
+    auto area = getLocalBounds().reduced(kPadding);
+    area.removeFromTop(kTitleHeight);
+
+    hpfKnob.setBoundsCentredIn(area.removeFromLeft(knob.x));
+    area.removeFromLeft(ui::layout::kGapS);
+    lpfKnob.setBoundsCentredIn(area.removeFromLeft(knob.x));
 }
 
 } // namespace invis::modules

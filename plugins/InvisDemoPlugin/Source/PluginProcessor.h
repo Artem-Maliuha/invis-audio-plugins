@@ -35,6 +35,8 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     invis::modules::MidiLearnModule midiLearn;
+    invis::modules::InputSidebarDSP inputSidebarDSP;
+    invis::modules::OutputSidebarDSP outputSidebarDSP;
 
     std::atomic<float> outputMeterL { 0.0f };
     std::atomic<float> outputMeterR { 0.0f };

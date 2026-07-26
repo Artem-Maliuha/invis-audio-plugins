@@ -2,6 +2,7 @@
 
 #include "../../ui_atoms/InvisKnob.h"
 #include "../../design_system/InvisThemeSupplier.h"
+#include "../../design_system/InvisLayout.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace invis::modules {
@@ -12,6 +13,15 @@ namespace invis::modules {
  */
 class InputFilterUI : public juce::Component, public ui::InvisThemeSupplier {
 public:
+    // Panel geometry, in design pixels. The module is sized by its contents, never the reverse.
+    static constexpr ui::InvisKnobSize kKnobSize = ui::InvisKnobSize::S;
+    static constexpr int   kPadding       = 8;
+    static constexpr int   kTitleHeight   = 18;
+    static constexpr float kTitleFontSize = 11.0f;
+
+    /** Intrinsic panel size derived from the two S knobs it hosts. */
+    static juce::Point<int> getIntrinsicSize();
+
     InputFilterUI(juce::AudioProcessorValueTreeState& apvts, const juce::String& prefix = "in_filter_");
     ~InputFilterUI() override = default;
 

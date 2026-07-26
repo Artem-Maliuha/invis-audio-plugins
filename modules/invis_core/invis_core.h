@@ -21,15 +21,35 @@
 // Design System
 #include "design_system/InvisTheme.h"
 #include "design_system/InvisThemeSupplier.h"
+#include "design_system/InvisLayout.h"
+#include "design_system/InvisMotion.h"
+#include "design_system/InvisFonts.h"
+
+// Framework (shared machine-driven behaviour)
+#include "framework/InvisAutoRoutine.h"
 
 // UI Atoms
+#include "ui_atoms/InvisButton.h"
 #include "ui_atoms/InvisCellSelector.h"
 #include "ui_atoms/InvisKnob.h"
 #include "ui_atoms/InvisLED.h"
+#include "ui_atoms/InvisLevelLamp.h"
 #include "ui_atoms/InvisLEDMeter.h"
+#include "ui_atoms/InvisConstellation.h"
+#include "ui_atoms/InvisSeparator.h"
+#include "ui_atoms/InvisStepperField.h"
 
 // Functional Modules
+#include "functional_modules/InvisLoudnessAnalyser.h"
+#include "functional_modules/InvisPresetTree.h"
+#include "functional_modules/InvisSidebarLayout.h"
 #include "functional_modules/input_filter/InputFilterDSP.h"
 #include "functional_modules/input_filter/InputFilterUI.h"
+#include "functional_modules/input_sidebar/InputSidebarDSP.h"
+#include "functional_modules/input_sidebar/InputSidebarUI.h"
+#include "functional_modules/output_sidebar/OutputSidebarDSP.h"
+#include "functional_modules/output_sidebar/OutputSidebarUI.h"
+#include "functional_modules/top_sidebar/TopSidebarDSP.h"
+#include "functional_modules/top_sidebar/TopSidebarUI.h"
 #include "functional_modules/oversampling/OversamplingDSP.h"
 #include "functional_modules/midi_learn/MidiLearnModule.h"
