@@ -304,6 +304,23 @@ public:
     static constexpr int kMaxNodes = 16;
     // How far a star can be heard from, at the ends of its sensitivity travel. Half sensitivity
     // lands on the radius every star used to carry, so a resting chart looks as it always did.
+    /**
+     * THE MOST THE OBSERVER CAN SEND INTO THE FIRST STAGE.
+     *
+     * Standing on a star must not replace the sound with it. Proximity is a SEND from the
+     * listener, and a send that reaches unity is not a send at all - it is the star in series, and
+     * at that point the source is simply gone. Even at zero distance the balance therefore stops
+     * at even: half of what you hear is still what came in.
+     *
+     * Past that is what the block's own DRY/WET is for. It sits INSIDE the star, so pushing it is
+     * a statement about that effect rather than about where you happen to be standing - and that
+     * distinction is the whole reason the two controls are separate.
+     *
+     * Hops BETWEEN stages are untouched by this and remain full sends: that is the routing law,
+     * and it is a different question from how much the listener feeds the chart in the first place.
+     */
+    static constexpr float kMaxEntrySend = 0.5f;
+
     static constexpr float kMinReach = 0.07f;
     static constexpr float kMaxReach = 0.46f;
 

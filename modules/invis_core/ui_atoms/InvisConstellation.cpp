@@ -667,6 +667,11 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
             const bool isEntry = (ci == entryCluster);
             const float feed = isEntry ? arrival : 1.0f;   // hops between stages are 100%
 
+            // What the listener may push in, as opposed to what the chain passes along. See
+            // kMaxEntrySend: at zero distance the balance stops at even rather than replacing the
+            // source outright.
+            const float send = isEntry ? feed * kMaxEntrySend : feed;
+
             // BRIGHTNESS IS ENGAGEMENT, so what is running matters, not what a hop is capable of.
             // A hop is a full send - that is the routing law - but a chain fed by a distant
             // observer is barely carrying anything, and lighting its downstream stars at full
@@ -705,7 +710,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     // much arrives, inside `arrival`. The share is the internal balance and it sums
                     // to one across the cluster, so a stage's total is `feed` however many members
                     // it has: joining stars morphs between them, it does not make them louder.
-                    c.amount = silent ? 0.0f : feed * share;
+                    c.amount = silent ? 0.0f : send * share;
 
                     // GLOW IS NOT THE SHARE. The share is normalised across the members, so a
                     // four-star cycle gives each one a quarter - and walking INTO the figure made
@@ -737,7 +742,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     // halo. Multiplying by it again here charged for the same thing twice, and
                     // left a downstream star with no mix control at all. That job belongs to the
                     // block's own DRY/WET.
-                    c.amount = silent ? 0.0f : feed;
+                    c.amount = silent ? 0.0f : send;
                     c.glow = silent ? 0.0f : running;
                     c.direct = (isEntry && !silent) ? running : 0.0f;
                 }
