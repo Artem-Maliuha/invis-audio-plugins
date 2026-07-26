@@ -33,6 +33,8 @@ InvisChassisUI::InvisChassisUI(InvisChassisDSP& dsp, juce::AudioProcessorValueTr
         outputUI.setLufsLabel(getLufsModeName(dspRef.getOutput().cycleLufsMode()));
     };
 
+    topUI.onStateReplaced = [this]() { if (onStateRestored) onStateRestored(); };
+
     inputUI.setLufsLabel(getLufsModeName(dspRef.getInput().getLufsMode()));
     outputUI.setLufsLabel(getLufsModeName(dspRef.getOutput().getLufsMode()));
 

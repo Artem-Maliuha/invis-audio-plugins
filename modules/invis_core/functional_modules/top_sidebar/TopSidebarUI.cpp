@@ -218,6 +218,8 @@ void TopSidebarUI::applyStateToUi(juce::ValueTree newState)
     syncGainStageField();
     bypassButton.setToggleState(hiddenBypassButton.getToggleState(), juce::dontSendNotification);
     syncOversamplingDisplay();
+
+    if (onStateReplaced) onStateReplaced();
 }
 
 void TopSidebarUI::selectCompareSlot(int slot)

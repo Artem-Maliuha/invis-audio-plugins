@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include <invis_core/invis_core.h>
+#include <optional>
 
 enum class PanelTheme {
     DarkSlateCharcoal, // Deep matte slate gray
@@ -18,6 +19,9 @@ public:
     // The bench declares the size of ITS OWN INSTRUMENT and nothing else. The panel around it is
     // the chassis's business, so a frame that grows a row does not send every plugin hunting for
     // its own dimensions again.
+    /** Height of a titled panel's heading strip, shared by every panel in the workspace. */
+    static constexpr int kPanelHeadingHeight = 12;
+
     static constexpr int kWorkspaceWidth  = 736;
     static constexpr int kWorkspaceHeight = 560;
 
@@ -52,6 +56,17 @@ private:
 
     void layoutWorkspace();
 
+    /** Offers the catalogue, and only creates the star once something is chosen. */
+    void chooseEffectThen(std::optional<juce::Point<float>> at);
+
+    /** Chart -> state tree, so compare slots and host save actually contain the instrument. */
+    void pushChartToState();
+    void pullChartFromState();
+
+    // Restoring writes to the chart, which reports a change, which would write straight back over
+    // the state being restored. One flag, because the loop is one call deep.
+    bool restoringChart { false };
+
     // The frame arrives assembled and already wired to the audio side.
     invis::modules::InvisChassisUI chassis;
     Workspace workspace { *this };
@@ -61,10 +76,26 @@ private:
     };
 
     invis::ui::InvisConstellation constellation;
-    invis::ui::InvisButton addNodeButton;
-    invis::ui::InvisButton randomiseButton;
-    invis::ui::InvisCellSelector channelModeCell;
-    static constexpr int kChannelCellWidth = 62;
+
+    /**
+     * A TITLED PANEL, like the inspector beside it.
+     *
+     * These controls used to float in a bare row above the chart, which put furniture between the
+     * sky and the top of the workspace and gave the field a lid. The right column already reads as
+     * "things about the chart"; they belong there, under a heading, with everything else.
+     */
+    struct ChartPanel : juce::Component {
+        explicit ChartPanel(InvisDemoPluginEditor& o);
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+
+        InvisDemoPluginEditor& owner;
+        invis::ui::InvisButton randomiseButton;
+        invis::ui::InvisCellSelector channelModeCell;
+    };
+
+    ChartPanel chartPanel { *this };
+    static constexpr int kChartPanelHeight = 108;
 
     /**
      * Inspector for one star. Lives in the PLUGIN, not in the atom: choosing which effect a star
@@ -72,6 +103,8 @@ private:
      */
     struct StarPanel : juce::Component {
         explicit StarPanel(InvisDemoPluginEditor& o);
+        static void paintPanelShell(juce::Graphics& g, juce::Rectangle<float> bounds,
+                                    const juce::String& heading);
         void showFor(int starIndex);
         void hide() { setVisible(false); }
 
@@ -81,10 +114,16 @@ private:
         InvisDemoPluginEditor& owner;
         int index { -1 };
 
+        void refreshFromNode();
+
         invis::ui::InvisCellSelector effectCell;
+
+        // The BLOCK's controls, not the effect's - see ConstellationNode. The dry tap is taken
+        // before the filters, so HPF/LPF shape only what feeds the effect.
         invis::ui::InvisKnob sensitivityKnob;
-        juce::OwnedArray<invis::ui::InvisButton> swatches;
-        invis::ui::InvisSeparator divider;
+        invis::ui::InvisKnob dryWetKnob;
+        invis::ui::InvisKnob hpfKnob;
+        invis::ui::InvisKnob lpfKnob;
     };
 
     // ALWAYS PRESENT, top right of the workspace. It used to float over the chart and appear only
@@ -92,11 +131,7 @@ private:
     // chart jump about under the cursor. A prepared panel outside the field just fills in.
     StarPanel starPanel { *this };
     static constexpr int kStarPanelWidth  = 200;
-    static constexpr int kStarPanelHeight = 236;
-
-    // Effect slots the pad hands out as nodes are added. Placeholder identities for now - the
-    // real effects arrive one at a time.
-    int nextEffectSlot { 0 };
+    static constexpr int kStarPanelHeight = 300;
 
     PanelTheme currentPanelTheme { PanelTheme::DarkSlateCharcoal };
 

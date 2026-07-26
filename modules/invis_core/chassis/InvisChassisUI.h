@@ -74,6 +74,14 @@ public:
     /** Anything the plugin wants advanced on the same clock as the frame. */
     std::function<void(float dt)> onTick;
 
+    /**
+     * The state tree was replaced - A/B/C, or a preset. Reload anything you keep in it yourself.
+     *
+     * Forwarded rather than left on the top sidebar so a plugin never has to know which part of
+     * the frame owns compare slots.
+     */
+    std::function<void()> onStateRestored;
+
 private:
     void timerCallback() override;
 

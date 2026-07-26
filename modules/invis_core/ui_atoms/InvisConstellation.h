@@ -97,7 +97,32 @@ struct ConstellationNode {
      * In a SERIAL chain this is the stage's dry/wet against whatever already reached it.
      * In a PARALLEL figure it scales the distance-derived weight.
      */
-    float sensitivity { 1.0f };
+    /**
+     * The BLOCK a star is, not the effect inside it.
+     *
+     * Band limiting and mix belong to the slot, not to whatever algorithm is dropped into it: every
+     * effect wants them, none of them should have to implement them, and a preset should keep them
+     * when you swap the effect out. The dry tap is taken BEFORE the filters, so they shape only
+     * what feeds the effect and never touch the signal that bypasses it:
+     *
+     *     in --+-------------------------------> dry
+     *          +-- HPF -- LPF -- [ effect ] ---> wet
+     *
+     * Normalized 0..1 in the same units the sidebar filters use, so a star and the chassis speak
+     * the same language.
+     */
+    float hpf { 0.0f };        // 0 = off
+    float lpf { 1.0f };        // 1 = off
+    float dryWet { 1.0f };     // a send slot is wet by default; the dry path is the chart's job
+
+    // UNIPOLAR, 0..1, and it rests at HALF.
+    //
+    // It used to be bipolar and rest at full: a new star arrived at maximum wet, so the only way
+    // it could go was down, and the negative half sat there needing a bar through the core, a red
+    // tint and its own "does not glow" rule to be readable at all. Resting at half gives the
+    // control somewhere to go in BOTH directions without inventing a second meaning for the
+    // downward one - which is all the polarity was ever standing in for.
+    float sensitivity { 0.5f };
 
     juce::Colour colour { juce::Colour::fromRGB(0, 229, 255) };
     juce::String label;
@@ -258,6 +283,9 @@ public:
 
     // --- Nodes ---
     int addNode(const juce::String& label, juce::Colour colour);
+
+    /** Same, but placed where you asked - used by the click-on-empty-sky offer. */
+    int addNodeAt(const juce::String& label, juce::Colour colour, juce::Point<float> normalized);
     void removeNode(int index);
     void clearNodes();
     int getNumNodes() const { return static_cast<int>(nodes.size()); }
@@ -335,7 +363,7 @@ public:
     const std::vector<StarLink>& getLinks() const { return links; }
     std::vector<ConstellationFigure> getFigures() const { return buildFigures(nodes.size(), links); }
 
-    /** Geometry of a figure, used for the shared halo and the hub control. */
+    /** Geometry of a figure, used for the shared halo. */
     static juce::Point<float> figureCentroid(const std::vector<ConstellationNode>& nodes,
                                              const std::vector<int>& stars);
 
@@ -362,24 +390,26 @@ public:
     static float figureRadius(const std::vector<ConstellationNode>& nodes,
                               const std::vector<int>& stars);
 
-    /** Every parallel cluster on the chart, flattened - what the halos and hubs are drawn for. */
+    /** Every parallel cluster on the chart, flattened - what the halos are drawn for. */
     std::vector<ConstellationCluster> getParallelClusters() const;
 
-    /**
-     * Shared sensitivity of a closed figure. Stored on the member STARS and kept in sync rather
-     * than on the figure: figures are derived from the links and have no stable identity to hang
-     * state on, so anything kept per-figure would be lost the moment a line moved. Breaking the
-     * ring then simply leaves each star holding the value it had.
-     */
-    void setFigureSensitivity(int anyMemberIndex, float bipolarAmount);
-    float getFigureSensitivity(const std::vector<int>& stars) const;
+    // A closed group had ONE shared control at its centre, on the reasoning that a parallel figure
+    // is one instrument. It is - but the control was a lump in the middle of the picture that took
+    // clicks away from the chart and duplicated something you could already do: set the stars, or
+    // move the observer. Removed rather than kept for symmetry.
 
     bool canLink(int a, int b) const;
     bool linkStars(int a, int b);
     void unlinkStars(int a, int b);
     int countLinks(int starIndex) const;
 
-    void setNodeSensitivity(int index, float bipolarAmount);
+    /** 0..1, resting at 0.5. Snaps to the half mark so the resting value is findable by hand. */
+    void setNodeSensitivity(int index, float amount);
+
+    /** The block's own band limiting and mix. See ConstellationNode for the topology. */
+    void setNodeHpf(int index, float normalized);
+    void setNodeLpf(int index, float normalized);
+    void setNodeDryWet(int index, float normalized);
 
     /** Geometry changed (node moved / resized / added / removed). */
     std::function<void()> onGeometryChanged;
@@ -388,7 +418,43 @@ public:
     std::function<void(int observerIndex, const std::vector<float>&)> onWeightsChanged;
 
     /** A node's core was clicked without dragging - the host may open its effect editor. */
+    /**
+     * The whole chart as state.
+     *
+     * WITHOUT THIS THE CHART DOES NOT EXIST as far as the host is concerned. A/B/C compare and
+     * preset recall both work by copying the plugin's state tree - which held every knob and not
+     * one star, so switching slots swapped the sidebars and left the instrument itself untouched.
+     * It looked like the feature was broken; nothing was broken, the chart was simply never in the
+     * thing being copied.
+     */
+    juce::ValueTree toValueTree() const;
+    void restoreFromValueTree(const juce::ValueTree& tree);
+
+    static const juce::Identifier& getStateType();
+
+    /** Chart coordinates to component pixels, so a host can anchor something to a spot on it. */
+    juce::Point<float> toPixelsFromNormalized(juce::Point<float> normalized) const
+    {
+        return toPixels(normalized);
+    }
+
     std::function<void(int index)> onNodeClicked;
+
+    /**
+     * A star's own values changed on the CHART - dragged, not typed.
+     *
+     * Without it an inspector is a one-way street: it can write to a star and never learn that the
+     * star moved underneath it, so the panel and the chart quietly disagree until you reselect.
+     */
+    std::function<void(int index)> onNodeChanged;
+
+    /**
+     * Empty sky was clicked where a star could go.
+     *
+     * The atom offers the SPOT; which effect lands there is product knowledge it must not carry.
+     * The host answers by calling addNodeAt() - or by ignoring it, which is a legitimate answer.
+     */
+    std::function<void(juce::Point<float> normalized)> onRequestAddNode;
 
     InvisTheme getEffectiveTheme() const override
     {
@@ -411,7 +477,7 @@ public:
     void mouseExit(const juce::MouseEvent& e) override;
 
 private:
-    enum class Grab { None, Node, Sensitivity, Observer, Linking, Hub };
+    enum class Grab { None, Node, Sensitivity, Observer, Linking };
 
     juce::Rectangle<float> getPadArea() const;
     juce::Point<float> toPixels(juce::Point<float> normalized) const;
@@ -428,10 +494,6 @@ private:
     /** The socket collar: grabbing here draws a line instead of moving the star. */
     int hitTestRim(juce::Point<float> pixels) const;
 
-    /** The hub at a closed figure's centre: one control for the whole instrument. Returns the
-        index of any member star, which is how the figure is addressed. */
-    int hitTestHub(juce::Point<float> pixels) const;
-
     /** Inserts a node BETWEEN vertex `edgeIndex` and the next one, keeping the polygon's shape. */
     void insertNodeOnLink(int linkIndex, juce::Point<float> normalized);
 
@@ -443,7 +505,7 @@ private:
     void paintNode(juce::Graphics& g, int index, const ChartFrame& frame);
     void paintSensitivityReadout(juce::Graphics& g, int index);
     void paintFigureHalo(juce::Graphics& g, const std::vector<int>& stars, float gate);
-    void paintFigureHub(juce::Graphics& g, const std::vector<int>& stars, float gate);
+
 
     /** The whole frame's view of the chart, so nothing below re-derives the routing. */
     ChartFrame takeSnapshot() const;
@@ -494,7 +556,6 @@ private:
     Grab grab { Grab::None };
     int grabbedIndex { -1 };
     int hoveredNode { -1 };
-    int hoveredHub { -1 };
     bool dragMoved { false };
     float grabStartRadius { 0.0f };
     juce::Point<float> grabStartPos;
@@ -521,6 +582,9 @@ private:
     int linkFrom { -1 };
     juce::Point<float> linkCursor;
     int linkTarget { -1 };
+
+    /** True where a new star could go: clear of every star, its aura, and everything clickable. */
+    bool isFreeSky(juce::Point<float> pixels) const;
 
     // Where the cursor is, so a hovered star can show its socket at the angle you approached from.
     // `hoverOnRim` separates the two halves of a star: the COLLAR offers a connection, the CORE

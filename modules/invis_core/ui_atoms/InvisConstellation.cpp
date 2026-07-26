@@ -500,36 +500,6 @@ float InvisConstellation::distanceToFigure(const std::vector<ConstellationNode>&
     return best;
 }
 
-float InvisConstellation::getFigureSensitivity(const std::vector<int>& stars) const
-{
-    for (int idx : stars)
-        if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-            return nodes[static_cast<size_t>(idx)].sensitivity;
-
-    return 1.0f;
-}
-
-void InvisConstellation::setFigureSensitivity(int anyMemberIndex, float bipolar)
-{
-    // The shared control belongs to the CLUSTER, not the component: a triangle with a star hung
-    // off it has one hub for the triangle, and the hanging star keeps its own sensitivity.
-    for (const auto& cl : getParallelClusters())
-    {
-        if (std::find(cl.stars.begin(), cl.stars.end(), anyMemberIndex) == cl.stars.end())
-            continue;
-
-        const float v = juce::jlimit(-1.0f, 1.0f, bipolar);
-        for (int idx : cl.stars)
-            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-                nodes[static_cast<size_t>(idx)].sensitivity = v;
-
-        break;
-    }
-
-    if (onGeometryChanged) onGeometryChanged();
-    notifyWeights();
-    repaint();
-}
 
 // --- Links ------------------------------------------------------------------------------------
 
@@ -721,9 +691,15 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     // four-star cycle gives each one a quarter - and walking INTO the figure made
                     // everything dim instead of lighting up, which is exactly backwards. What the
                     // eye is being told is how strongly the stage is FED, so glow follows the
-                    // arrival; the share only decides which member leads.
-                    const float lead = juce::jlimit(0.0f, 1.0f, share * count);
-                    c.glow = silent ? 0.0f : feed * (0.55f + 0.45f * lead);
+                    // arrival.
+                    //
+                    // And it is the SAME for every member. Letting the nearest star lead described
+                    // a hierarchy the processing does not have: a closed cluster is one parallel
+                    // stage, so a beam to one of its stars must not read as a stronger connection
+                    // than a beam to its neighbour. The share still steers the audio balance -
+                    // that is the morph - but it has no business claiming a brighter link.
+                    juce::ignoreUnused(count);
+                    c.glow = silent ? 0.0f : feed;
                 }
             }
             else
@@ -858,6 +834,107 @@ juce::Colour InvisConstellation::getObserverColour(int observerIndex) const
 
 // --- Stars ------------------------------------------------------------------------------------
 
+const juce::Identifier& InvisConstellation::getStateType()
+{
+    static const juce::Identifier type { "CONSTELLATION" };
+    return type;
+}
+
+juce::ValueTree InvisConstellation::toValueTree() const
+{
+    juce::ValueTree tree { getStateType() };
+
+    tree.setProperty("channelMode", static_cast<int>(channelMode), nullptr);
+    tree.setProperty("obs0x", observers[0].x, nullptr);
+    tree.setProperty("obs0y", observers[0].y, nullptr);
+    tree.setProperty("obs1x", observers[1].x, nullptr);
+    tree.setProperty("obs1y", observers[1].y, nullptr);
+
+    for (const auto& node : nodes)
+    {
+        juce::ValueTree star { "STAR" };
+        star.setProperty("label", node.label, nullptr);
+        star.setProperty("colour", static_cast<int>(node.colour.getARGB()), nullptr);
+        star.setProperty("x", node.position.x, nullptr);
+        star.setProperty("y", node.position.y, nullptr);
+        star.setProperty("radius", node.radius, nullptr);
+        star.setProperty("sensitivity", node.sensitivity, nullptr);
+        star.setProperty("hpf", node.hpf, nullptr);
+        star.setProperty("lpf", node.lpf, nullptr);
+        star.setProperty("dryWet", node.dryWet, nullptr);
+        tree.appendChild(star, nullptr);
+    }
+
+    for (const auto& l : links)
+    {
+        juce::ValueTree link { "LINK" };
+        link.setProperty("a", l.a, nullptr);
+        link.setProperty("b", l.b, nullptr);
+        tree.appendChild(link, nullptr);
+    }
+
+    return tree;
+}
+
+void InvisConstellation::restoreFromValueTree(const juce::ValueTree& tree)
+{
+    if (!tree.hasType(getStateType())) return;
+
+    nodes.clear();
+    links.clear();
+
+    channelMode = static_cast<ConstellationChannelMode>(
+        juce::jlimit(0, 3, static_cast<int>(tree.getProperty("channelMode", 0))));
+
+    observers[0] = { static_cast<float>(tree.getProperty("obs0x", 0.5)),
+                     static_cast<float>(tree.getProperty("obs0y", 0.5)) };
+    observers[1] = { static_cast<float>(tree.getProperty("obs1x", 0.5)),
+                     static_cast<float>(tree.getProperty("obs1y", 0.5)) };
+
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+    {
+        const auto child = tree.getChild(i);
+
+        if (child.hasType("STAR"))
+        {
+            if (static_cast<int>(nodes.size()) >= kMaxNodes) continue;
+
+            ConstellationNode node;
+            node.label = child.getProperty("label", "").toString();
+            node.colour = juce::Colour(static_cast<juce::uint32>(
+                static_cast<int>(child.getProperty("colour", 0))));
+            node.position = { static_cast<float>(child.getProperty("x", 0.5)),
+                              static_cast<float>(child.getProperty("y", 0.5)) };
+            node.radius = static_cast<float>(child.getProperty("radius", 0.26));
+            node.sensitivity = static_cast<float>(child.getProperty("sensitivity", 0.5));
+            node.hpf = static_cast<float>(child.getProperty("hpf", 0.0));
+            node.lpf = static_cast<float>(child.getProperty("lpf", 1.0));
+            node.dryWet = static_cast<float>(child.getProperty("dryWet", 1.0));
+
+            nodes.push_back(node);
+        }
+        else if (child.hasType("LINK"))
+        {
+            links.push_back({ static_cast<int>(child.getProperty("a", -1)),
+                              static_cast<int>(child.getProperty("b", -1)) });
+        }
+    }
+
+    // A link naming a star that is no longer there would be a component of one, silently changing
+    // the routing. Dropped rather than repaired: the drawing is the data, and half a drawing is
+    // not one.
+    const int count = static_cast<int>(nodes.size());
+    links.erase(std::remove_if(links.begin(), links.end(),
+                               [count](const StarLink& l)
+                               { return l.a < 0 || l.b < 0 || l.a >= count || l.b >= count; }),
+                links.end());
+
+    lastEntry[0] = lastEntry[1] = -1;
+
+    notifyWeights();
+    repaint();
+}
+
 int InvisConstellation::addNode(const juce::String& label, juce::Colour colour)
 {
     if (static_cast<int>(nodes.size()) >= kMaxNodes) return -1;
@@ -885,6 +962,34 @@ int InvisConstellation::addNode(const juce::String& label, juce::Colour colour)
     repaint();
 
     return n;
+}
+
+int InvisConstellation::addNodeAt(const juce::String& label, juce::Colour colour,
+                                  juce::Point<float> normalized)
+{
+    const int index = addNode(label, colour);
+    if (index >= 0) setNodePosition(index, normalized);
+
+    return index;
+}
+
+bool InvisConstellation::isFreeSky(juce::Point<float> p) const
+{
+    if (static_cast<int>(nodes.size()) >= kMaxNodes) return false;
+    if (!getPadArea().reduced(getMetrics(padSize).nodeRadius).contains(p)) return false;
+
+    // Anything you could already act on wins: the offer must never cover a target.
+    if (hitTestObserver(p) >= 0 || hitTestNodeCore(p) >= 0 || hitTestRim(p) >= 0) return false;
+    juce::Point<float> onLink;
+    if (hitTestLink(p, onLink) >= 0) return false;
+
+    // And clear of every star's REACH, not merely of the stars. Offering a spot inside an aura
+    // would put a new star inside somebody else's field, where it is neither free nor separate.
+    const auto here = toNormalized(p);
+    for (const auto& node : nodes)
+        if (here.getDistanceFrom(node.position) < node.radius * 0.92f) return false;
+
+    return true;
 }
 
 void InvisConstellation::removeNode(int index)
@@ -970,13 +1075,47 @@ void InvisConstellation::setNodeRadius(int index, float r)
     repaint();
 }
 
-void InvisConstellation::setNodeSensitivity(int index, float bipolar)
+void InvisConstellation::setNodeSensitivity(int index, float amount)
 {
     if (index < 0 || index >= static_cast<int>(nodes.size())) return;
 
-    nodes[static_cast<size_t>(index)].sensitivity = juce::jlimit(-1.0f, 1.0f, bipolar);
+    // Magnetic at the half mark. The resting value has to be findable by hand or it is only a
+    // number the panel knows about.
+    float v = juce::jlimit(0.0f, 1.0f, amount);
+    if (std::abs(v - 0.5f) < 0.022f) v = 0.5f;
+
+    nodes[static_cast<size_t>(index)].sensitivity = v;
+
+    if (onNodeChanged) onNodeChanged(index);
     if (onGeometryChanged) onGeometryChanged();
     notifyWeights();
+    repaint();
+}
+
+void InvisConstellation::setNodeHpf(int index, float normalized)
+{
+    if (index < 0 || index >= static_cast<int>(nodes.size())) return;
+
+    nodes[static_cast<size_t>(index)].hpf = juce::jlimit(0.0f, 1.0f, normalized);
+    if (onNodeChanged) onNodeChanged(index);
+    repaint();
+}
+
+void InvisConstellation::setNodeLpf(int index, float normalized)
+{
+    if (index < 0 || index >= static_cast<int>(nodes.size())) return;
+
+    nodes[static_cast<size_t>(index)].lpf = juce::jlimit(0.0f, 1.0f, normalized);
+    if (onNodeChanged) onNodeChanged(index);
+    repaint();
+}
+
+void InvisConstellation::setNodeDryWet(int index, float normalized)
+{
+    if (index < 0 || index >= static_cast<int>(nodes.size())) return;
+
+    nodes[static_cast<size_t>(index)].dryWet = juce::jlimit(0.0f, 1.0f, normalized);
+    if (onNodeChanged) onNodeChanged(index);
     repaint();
 }
 
@@ -1132,20 +1271,6 @@ int InvisConstellation::hitTestRim(juce::Point<float> p) const
     return -1;
 }
 
-int InvisConstellation::hitTestHub(juce::Point<float> p) const
-{
-    const float tol = getMetrics(padSize).nodeRadius * 0.9f + 7.0f;
-
-    for (const auto& cl : getParallelClusters())
-    {
-        if (cl.stars.size() < 3) continue;
-
-        if (toPixels(figureCentroid(nodes, cl.stars)).getDistanceFrom(p) <= tol)
-            return cl.stars.front();   // any member addresses the cluster
-    }
-
-    return -1;
-}
 
 int InvisConstellation::hitTestObserver(juce::Point<float> p) const
 {
@@ -1232,18 +1357,6 @@ void InvisConstellation::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
-    // The hub sits inside the enclosure, where nothing else competes for the same pixels, so it
-    // is tested early - but after the observer, which may be parked on top of it.
-    if (const int hub = hitTestHub(e.position); hub >= 0)
-    {
-        grab = Grab::Hub;
-        grabbedIndex = hub;
-        grabStartRadius = nodes[static_cast<size_t>(hub)].sensitivity;
-        grabStartPos = e.position;
-        repaint();
-        return;
-    }
-
     if (const int core = hitTestNodeCore(e.position); core >= 0)
     {
         grabbedIndex = core;
@@ -1285,8 +1398,16 @@ void InvisConstellation::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
-    // Bare sky does NOTHING. Where the observer stands is a deliberate act - teleporting it on a
-    // stray click loses the position you were auditioning.
+    // Bare sky where a star could go TAKES THE OFFER - the silhouette under the cursor said so.
+    // The observer still never teleports here: where you are standing is a deliberate act, and
+    // losing the position you were auditioning to a stray click is the reason bare sky did nothing
+    // in the first place.
+    if (onRequestAddNode != nullptr && isFreeSky(e.position))
+    {
+        onRequestAddNode(toNormalized(e.position));
+        return;
+    }
+
     grab = Grab::None;
 }
 
@@ -1304,22 +1425,13 @@ void InvisConstellation::mouseDrag(const juce::MouseEvent& e)
             setNodePosition(grabbedIndex, toNormalized(e.position));
             break;
 
-        case Grab::Hub:
-        {
-            // Same knob gesture as a single star, so the shared control feels like the ones it
-            // replaces rather than like a different kind of thing.
-            const float travel = grabStartPos.y - e.position.y;
-            const float scale = e.mods.isShiftDown() ? 0.0012f : 0.006f;
-            setFigureSensitivity(grabbedIndex, grabStartRadius + travel * scale);
-            break;
-        }
-
         case Grab::Sensitivity:
         {
             // Knob behaviour: vertical travel, referenced to the value at press so the gesture
-            // cannot drift, and shift for a fine pass.
+            // cannot drift, and shift for a fine pass. Halved with the range: 0..1 now covers what
+            // -1..+1 used to, so the same hand movement must not travel twice as far.
             const float travel = grabStartPos.y - e.position.y;
-            const float scale = e.mods.isShiftDown() ? 0.0012f : 0.006f;
+            const float scale = e.mods.isShiftDown() ? 0.0006f : 0.003f;
             setNodeSensitivity(grabbedIndex, grabStartRadius + travel * scale);
             break;
         }
@@ -1379,7 +1491,6 @@ void InvisConstellation::mouseExit(const juce::MouseEvent&)
 {
     cursorInside = false;
     hoveredNode = -1;
-    hoveredHub = -1;
     hoveredLink = -1;
     overBreakHandle = false;
     repaint();
@@ -1414,24 +1525,18 @@ void InvisConstellation::mouseMove(const juce::MouseEvent& e)
         return;
     }
 
-    const int hub = hitTestHub(e.position);
-
     // The COLLAR counts as hovering the star. Requiring the cursor to be on the core before the
     // collar would even appear is why connecting was undiscoverable: the target only existed once
     // you were already somewhere else.
-    int star = -1;
+    int star = hitTestNodeCore(e.position);
     bool onRim = false;
-    if (hub < 0)
-    {
-        star = hitTestNodeCore(e.position);
-        if (star < 0) { star = hitTestRim(e.position); onRim = (star >= 0); }
-    }
+    if (star < 0) { star = hitTestRim(e.position); onRim = (star >= 0); }
 
     hoverOnRim = onRim;
 
     // Lines only offer themselves when nothing more specific is under the cursor
     juce::Point<float> onLink;
-    const int link = (star >= 0 || hub >= 0 || hitTestObserver(e.position) >= 0)
+    const int link = (star >= 0 || hitTestObserver(e.position) >= 0)
                        ? -1 : hitTestLink(e.position, onLink);
 
     bool overHandle = false;
@@ -1445,11 +1550,12 @@ void InvisConstellation::mouseMove(const juce::MouseEvent& e)
     }
 
     // A hovered star redraws on every move: its socket silhouette sits at the angle you are
-    // approaching from, so it has to follow the cursor rather than appear once.
-    if (star < 0 && star == hoveredNode && link == hoveredLink && overHandle == overBreakHandle
-        && hub == hoveredHub) return;
+    // approaching from, so it has to follow the cursor rather than appear once. So does the
+    // empty-sky offer, which is drawn AT the cursor.
+    const bool onOffer = (star < 0 && link < 0 && isFreeSky(e.position));
 
-    hoveredHub = hub;
+    if (!onOffer && star < 0 && star == hoveredNode && link == hoveredLink
+        && overHandle == overBreakHandle) return;
     hoveredNode = star;
     hoveredLink = link;
     overBreakHandle = overHandle;
@@ -1462,33 +1568,27 @@ void InvisConstellation::mouseMove(const juce::MouseEvent& e)
 
 void InvisConstellation::paintGlassWell(juce::Graphics& g, juce::Rectangle<float> area)
 {
-    const auto m = getMetrics(padSize);
+    // NO FRAME. The chart used to be a display set into the chassis - bezel, sheen, hard corners -
+    // which drew a box around the sky and made the field feel like a window you look through
+    // rather than a space you are standing in. A star near the edge read as clipped by furniture.
+    //
+    // What is left is only a deepening toward the middle: the boundary is still FELT, because the
+    // light falls away, but there is no line anywhere for a star to bump into.
+    const float reach = std::max(area.getWidth(), area.getHeight()) * 0.72f;
 
-    // The chart is a DISPLAY SET INTO THE CHASSIS, not a flat panel region. The recess, the sheen
-    // and the vignette are what let the neon inside read as light behind glass rather than paint
-    // on metal - which is what keeps it in the same world as the machined knobs around it.
-    g.setColour(juce::Colours::black.withAlpha(0.75f));
-    g.fillRoundedRectangle(area, m.corner);
+    juce::ColourGradient depth(juce::Colour::fromRGB(7, 10, 15).withAlpha(0.92f),
+                               area.getCentreX(), area.getCentreY(),
+                               juce::Colours::transparentBlack,
+                               area.getCentreX() + reach, area.getCentreY(), true);
+    depth.addColour(0.55, juce::Colour::fromRGB(7, 10, 15).withAlpha(0.68f));
+    depth.addColour(0.85, juce::Colour::fromRGB(7, 10, 15).withAlpha(0.22f));
 
-    g.setGradientFill(juce::ColourGradient(
-        juce::Colour::fromRGB(6, 9, 14), area.getCentreX(), area.getY(),
-        juce::Colour::fromRGB(12, 16, 22), area.getCentreX(), area.getBottom(), false));
-    g.fillRoundedRectangle(area.reduced(m.bezelWidth * 0.5f), m.corner);
-
-    g.setColour(juce::Colours::black.withAlpha(0.65f));
-    g.drawRoundedRectangle(area.reduced(0.5f), m.corner, m.bezelWidth * 0.8f);
-    g.setColour(juce::Colours::white.withAlpha(0.10f));
-    g.drawRoundedRectangle(area.reduced(m.bezelWidth * 0.75f), m.corner * 0.8f, 1.0f);
+    g.setGradientFill(depth);
+    g.fillEllipse(area.getCentreX() - reach, area.getCentreY() - reach, reach * 2.0f, reach * 2.0f);
 }
 
 void InvisConstellation::paintAura(juce::Graphics& g, const ConstellationNode& node, float weight)
 {
-    // A NEGATIVE STAR DOES NOT GLOW. It was previously given the same aura as a positive one, on
-    // the reasoning that subtracting is still doing something - but light that means "removing
-    // light" reads as nonsense. Inverted polarity is stated by the bar through the core instead,
-    // and darkness is the honest picture of it.
-    if (node.sensitivity < 0.0f) return;
-
     const auto centre = toPixels(node.position);
     const float r = radiusToPixels(node.radius);
     if (r <= 1.0f) return;
@@ -1514,7 +1614,6 @@ void InvisConstellation::paintAura(juce::Graphics& g, const ConstellationNode& n
 void InvisConstellation::paintFigureHalo(juce::Graphics& g, const std::vector<int>& stars, float gate)
 {
     if (stars.size() < 3) return;
-    if (getFigureSensitivity(stars) < 0.0f) return;   // negative instrument: dark, see paintAura
 
     const auto area = getPadArea();
     const auto centre = toPixels(figureCentroid(nodes, stars));
@@ -1548,7 +1647,16 @@ void InvisConstellation::paintFigureHalo(juce::Graphics& g, const std::vector<in
     // auras in favour of one wide field was correct in principle and far too dim in practice: the
     // same light spread over a much larger area reads as less light. So the field is layered -
     // a broad wash, an iridescent middle, and a lobe still sitting on every member.
-    const float intensity = 0.10f + 0.60f * lit;
+    // TWO DIFFERENT NUMBERS, AND ONLY ONE OF THEM WAS THE PROBLEM.
+    //
+    // The base is the group's PRESENCE - it is there, drawn, waiting - and it has to survive with
+    // nobody listening or the enclosure vanishes from the chart until you walk into it. The lit
+    // term is how hard it is being FED, and that was the part running away: one field plus a lobe
+    // on every member adds up fast, so a closed group outshone everything else simply for having
+    // more stars in it, which reads as "louder" when all it means is "more of them".
+    //
+    // So the base holds where it was and the lit term is cut to well under half.
+    const float intensity = 0.12f + 0.26f * lit;
 
     juce::ColourGradient field(light.colour.withAlpha(intensity * 0.85f), centre.x, centre.y,
                                juce::Colours::transparentBlack, centre.x + reach, centre.y, true);
@@ -1587,7 +1695,7 @@ void InvisConstellation::paintFigureHalo(juce::Graphics& g, const std::vector<in
         if (lobe <= 1.0f) continue;
 
         const auto tint = node.colour.interpolatedWith(light.colour, 0.62f);
-        const float glow = intensity * 0.72f;
+        const float glow = intensity * 0.62f;
 
         juce::ColourGradient lamp(tint.withAlpha(glow), at.x, at.y,
                                   juce::Colours::transparentBlack, at.x + lobe, at.y, true);
@@ -1601,75 +1709,11 @@ void InvisConstellation::paintFigureHalo(juce::Graphics& g, const std::vector<in
     // A bright core at the centroid: the instrument has a place, and saying so is what makes the
     // hub control look like it belongs to something.
     const float core = std::max(6.0f, extent * 0.28f);
-    juce::ColourGradient heart(light.colour.brighter(0.4f).withAlpha(0.20f + 0.34f * lit),
+    juce::ColourGradient heart(light.colour.brighter(0.4f).withAlpha(0.18f + 0.14f * lit),
                                centre.x, centre.y,
                                juce::Colours::transparentBlack, centre.x + core, centre.y, true);
     g.setGradientFill(heart);
     g.fillEllipse(centre.x - core, centre.y - core, core * 2.0f, core * 2.0f);
-}
-
-void InvisConstellation::paintFigureHub(juce::Graphics& g, const std::vector<int>& stars, float gate)
-{
-    if (stars.size() < 3) return;
-
-    const auto m = getMetrics(padSize);
-    const auto centre = toPixels(figureCentroid(nodes, stars));
-    const float sens = getFigureSensitivity(stars);
-
-    std::vector<juce::Colour> colours;
-    for (int idx : stars)
-        if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-            colours.push_back(nodes[static_cast<size_t>(idx)].colour);
-
-    if (colours.empty()) return;
-
-    const auto blend = mixStarLight(colours, {}).colour;
-    const auto tint = sens < 0.0f ? juce::Colour::fromRGB(255, 23, 68) : blend;
-
-    const bool active = (grab == Grab::Hub && grabbedIndex >= 0
-                         && std::find(stars.begin(), stars.end(), grabbedIndex) != stars.end());
-    const bool hovered = active
-                       || (hoveredHub >= 0
-                           && std::find(stars.begin(), stars.end(), hoveredHub) != stars.end());
-
-    const float hub = m.nodeRadius * 0.9f;
-
-    // ONE control for the whole instrument, sitting where the instrument is. The shared
-    // sensitivity has no other honest home: the figure is derived from the lines, so a control
-    // parked on any one member would look like it belonged to that star alone.
-    g.setColour(juce::Colours::black.withAlpha(0.6f));
-    g.fillEllipse(centre.x - hub - 2.0f, centre.y - hub - 1.0f, (hub + 2.0f) * 2.0f, (hub + 2.0f) * 2.0f);
-
-    const float ring = hub + 6.0f;
-    const float start = juce::degreesToRadians(220.0f);
-    const float end = juce::degreesToRadians(500.0f);
-    const float mid = (start + end) * 0.5f;
-    const float value = mid + sens * (end - mid);
-
-    juce::Path track;
-    track.addCentredArc(centre.x, centre.y, ring, ring, 0.0f, start, end, true);
-    g.setColour(juce::Colours::white.withAlpha(hovered ? 0.20f : 0.10f));
-    g.strokePath(track, juce::PathStrokeType(m.arcStroke, juce::PathStrokeType::curved,
-                                             juce::PathStrokeType::rounded));
-
-    juce::Path fill;
-    fill.addCentredArc(centre.x, centre.y, ring, ring, 0.0f, std::min(mid, value), std::max(mid, value), true);
-    g.setColour(tint.withAlpha(0.35f + 0.35f * std::abs(gate)));
-    g.strokePath(fill, juce::PathStrokeType(m.arcStroke * 2.2f, juce::PathStrokeType::curved,
-                                            juce::PathStrokeType::rounded));
-    g.setColour(tint.brighter(0.3f));
-    g.strokePath(fill, juce::PathStrokeType(m.arcStroke, juce::PathStrokeType::curved,
-                                            juce::PathStrokeType::rounded));
-
-    InvisLED::drawLEDDot(g, centre, hub, tint, 0.30f + 0.85f * std::abs(gate) + (hovered ? 0.3f : 0.0f),
-                         LEDMountType::RecessedSlot);
-
-    if (sens < -0.01f)
-    {
-        const float bar = hub * 1.4f;
-        g.setColour(juce::Colours::white.withAlpha(0.85f));
-        g.drawLine(centre.x - bar, centre.y, centre.x + bar, centre.y, 1.8f);
-    }
 }
 
 void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame)
@@ -1909,8 +1953,35 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
 
         if (!carrying)
         {
-            g.setColour(theme.accentPrimary.withAlpha(hovered ? 0.42f : 0.18f));
-            g.drawLine(pa.x, pa.y, pb.x, pb.y, m.polygonStroke);
+            // WIRED, WITH NOTHING PASSING. A thin wash of the theme accent said "a line exists"
+            // and nothing else - not which stars it joins, and not clearly enough to trust that
+            // you had actually connected them.
+            //
+            // So an idle line wears its OWN ends' colours, desaturated and unlit: a cable you can
+            // trace to both stars, plainly not carrying. It says nothing about DIRECTION, because
+            // an unfed chain genuinely has none - direction only exists once an observer picks an
+            // entry, and inventing an arrow here would be a claim about routing that has not
+            // happened yet.
+            const auto& ca2 = nodes[static_cast<size_t>(l.a)].colour;
+            const auto& cb2 = nodes[static_cast<size_t>(l.b)].colour;
+
+            const auto unlit = [](juce::Colour c)
+            {
+                return c.withSaturation(c.getSaturation() * 0.42f).withBrightness(0.58f);
+            };
+
+            const float a = hovered ? 0.55f : 0.30f;
+
+            juce::Path run;
+            run.startNewSubPath(pa);
+            run.lineTo(pb);
+
+            // A soft bed, so the cable separates from the field it lies on
+            g.setGradientFill({ ca2.withAlpha(a * 0.18f), pa, cb2.withAlpha(a * 0.18f), pb, false });
+            g.strokePath(run, juce::PathStrokeType(m.polygonStroke * 3.4f));
+
+            g.setGradientFill({ unlit(ca2).withAlpha(a), pa, unlit(cb2).withAlpha(a), pb, false });
+            g.strokePath(run, juce::PathStrokeType(m.polygonStroke));
         }
         else
         {
@@ -1978,11 +2049,33 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
 
 void InvisConstellation::paintGhostNode(juce::Graphics& g)
 {
-    if (hoveredLink < 0 || overBreakHandle) return;
     if (static_cast<int>(nodes.size()) >= kMaxNodes) return;
 
     const auto m = getMetrics(padSize);
     const auto theme = getEffectiveTheme();
+
+    // EMPTY SKY IS AN OFFER TOO. A line offers a star between two others; open space offers one on
+    // its own, and until now said nothing at all - the only way to find out that a chart could
+    // grow was to notice the ADD key. A silhouette under the cursor makes the whole field
+    // answerable, and it is drawn only where a star could actually go, so it never promises a spot
+    // that would land inside somebody else's aura.
+    if (hoveredLink < 0 && cursorInside && grab == Grab::None && linkFrom < 0
+        && isFreeSky(cursorPos))
+    {
+        const float r = m.nodeRadius * 0.9f;
+
+        g.setColour(theme.accentPrimary.withAlpha(0.07f));
+        g.fillEllipse(cursorPos.x - r, cursorPos.y - r, r * 2.0f, r * 2.0f);
+
+        g.setColour(theme.accentPrimary.withAlpha(0.38f));
+        g.drawEllipse(cursorPos.x - r, cursorPos.y - r, r * 2.0f, r * 2.0f, 1.1f);
+
+        const float cross = r * 0.5f;
+        g.drawLine(cursorPos.x - cross, cursorPos.y, cursorPos.x + cross, cursorPos.y, 1.4f);
+        g.drawLine(cursorPos.x, cursorPos.y - cross, cursorPos.x, cursorPos.y + cross, 1.4f);
+    }
+
+    if (hoveredLink < 0 || overBreakHandle) return;
 
     // A silhouette, not a star: it must read as an OFFER. Drawing it solid would make the chart
     // look like it already has something you did not put there.
@@ -2008,8 +2101,7 @@ void InvisConstellation::paintSensitivityReadout(juce::Graphics& g, int index)
     // The value now lives IN the star as a fill, so this is only the exact number while you are
     // setting it. The ring that used to state it here belongs to the socket collar - two meanings
     // on the same circle is how connecting became invisible.
-    const int pct = juce::roundToInt(node.sensitivity * 100.0f);
-    const juce::String text = (pct > 0 ? "+" : "") + juce::String(pct) + "%";
+    const juce::String text = juce::String(juce::roundToInt(node.sensitivity * 100.0f)) + "%";
 
     const auto box = juce::Rectangle<float>(c.x - 40.0f, c.y - m.nodeRadius - 24.0f, 80.0f, 14.0f);
 
@@ -2017,8 +2109,7 @@ void InvisConstellation::paintSensitivityReadout(juce::Graphics& g, int index)
     g.fillRoundedRectangle(box.reduced(22.0f, 0.0f).expanded(6.0f, 1.0f), 3.0f);
 
     g.setFont(InvisFonts::getDisplayFont(m.labelFontSize));
-    g.setColour(node.sensitivity < 0.0f ? juce::Colour::fromRGB(255, 23, 68)
-                                        : node.colour.brighter(0.4f));
+    g.setColour(node.colour.brighter(0.4f));
     g.drawText(text, box, juce::Justification::centred, false);
 }
 
@@ -2148,8 +2239,7 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
                 frame.stages[static_cast<size_t>(p)][static_cast<size_t>(index)],
                 frame.heard[static_cast<size_t>(p)][static_cast<size_t>(index)].chainOrder));
 
-    // Negative polarity stays unlit here too, so a star reads the same way as its aura does.
-    const float lit = (node.sensitivity < 0.0f) ? 0.0f : peak;
+    const float lit = peak;
     const float rNode = m.nodeRadius;
 
     // A HOLLOW STAR. The solid LED dome that used to fill the core is gone: it sat on top of the
@@ -2163,37 +2253,50 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
     // knob language, which cost the collar the one ring it needed for connecting AND made you hunt
     // for a thin line to read a number. Filling the star itself is legible at a glance from across
     // the chart, and it leaves the outside of the star for the socket.
-    const float fill = juce::jlimit(0.0f, 1.0f, std::abs(node.sensitivity));
+    //
+    // The resting value is a WHOLE star. Below it the core is eaten away as a pie; above it a
+    // brighter pie grows out of the centre. So half is not half a picture - it is the complete
+    // one, and both directions are departures from it that you can read at a glance and tell apart
+    // instantly, because one takes the star apart and the other lights it from within.
+    const float sens = juce::jlimit(0.0f, 1.0f, node.sensitivity);
+    const float pie = rNode * 0.88f;
+    const float body = 0.62f + 0.38f * lit;
 
-    if (fill > 0.004f)
+    const auto wedgeOf = [&centre](float radius, float turns)
     {
-        const float pie = rNode * 0.88f;
-        const float sweep = juce::MathConstants<float>::twoPi * fill;
+        juce::Path w;
+        w.startNewSubPath(centre);
+        w.addCentredArc(centre.x, centre.y, radius, radius, 0.0f,
+                        0.0f, juce::MathConstants<float>::twoPi * turns, false);
+        w.closeSubPath();
+        return w;
+    };
 
-        // Positive fills clockwise from twelve, negative anticlockwise: the direction alone tells
-        // you the polarity before the colour or the bar does.
-        const float from = (node.sensitivity < 0.0f) ? -sweep : 0.0f;
+    if (sens < 0.5f)
+    {
+        // Taken from full: the star is literally missing a slice.
+        const float remaining = sens / 0.5f;
 
-        juce::Path wedge;
-        wedge.startNewSubPath(centre);
-        wedge.addCentredArc(centre.x, centre.y, pie, pie, 0.0f, from, from + sweep, false);
-        wedge.closeSubPath();
-
-        const auto tint = node.sensitivity < 0.0f ? juce::Colour::fromRGB(255, 23, 68)
-                                                  : node.colour;
-
-        // Solid enough to read against the dark glass at a glance, brighter still when the star is
-        // actually being fed.
-        g.setColour(tint.withAlpha(0.62f + 0.38f * lit));
-        g.fillPath(wedge);
-
-        // The cut edge, so a nearly-full star is not mistaken for a full one
-        if (fill < 0.998f)
+        if (remaining > 0.004f)
         {
-            const float edge = from + sweep;
-            g.setColour(juce::Colours::black.withAlpha(0.55f));
-            g.drawLine(centre.x, centre.y,
-                       centre.x + std::sin(edge) * pie, centre.y - std::cos(edge) * pie, 1.6f);
+            g.setColour(node.colour.withAlpha(body));
+            g.fillPath(wedgeOf(pie, remaining));
+        }
+    }
+    else
+    {
+        g.setColour(node.colour.withAlpha(body));
+        g.fillEllipse(centre.x - pie, centre.y - pie, pie * 2.0f, pie * 2.0f);
+
+        // Past the resting point there is nowhere left to fill, so the extra is stated as a hotter
+        // core rather than as more area - a star being driven, not a bigger one.
+        const float over = (sens - 0.5f) / 0.5f;
+
+        if (over > 0.004f)
+        {
+            const float innerR = pie * 0.60f;
+            g.setColour(node.colour.brighter(0.85f).withAlpha(std::min(1.0f, body + 0.15f)));
+            g.fillPath(wedgeOf(innerR, over));
         }
     }
 
@@ -2204,15 +2307,34 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
     g.drawEllipse(centre.x - rNode, centre.y - rNode, rNode * 2.0f, rNode * 2.0f,
                   hovered ? 1.8f : 1.3f + 1.4f * beat);
 
-    // The ring the strike throws off, so the beat carries across the chart at a glance.
+    // THE STRIKE. It was there and nobody could see it: the ring started at the star's own edge,
+    // where the edge stroke already is, and only became visible once it had expanded - by which
+    // point its alpha had faded with the same `beat` that drove the expansion. It was fading in
+    // exactly as fast as it was appearing.
+    //
+    // So the ring now leaves the edge immediately, and its alpha holds while it travels.
     if (beat > 0.01f)
     {
-        const float ring = rNode * (1.0f + 0.85f * (1.0f - beat));
-        g.setColour(node.colour.withAlpha(0.55f * beat));
-        g.drawEllipse(centre.x - ring, centre.y - ring, ring * 2.0f, ring * 2.0f, 1.6f * beat);
+        const float travel = 1.0f - beat;
+        const float hold = std::pow(beat, 0.45f);            // fades later than it expands
 
-        const float halo = rNode * 2.6f;
-        g.setGradientFill(juce::ColourGradient(node.colour.withAlpha(0.30f * beat), centre.x, centre.y,
+        const float ring = rNode * (1.15f + 1.9f * travel);
+        g.setColour(juce::Colours::white.withAlpha(0.30f * hold * (1.0f - travel * 0.5f)));
+        g.drawEllipse(centre.x - ring, centre.y - ring, ring * 2.0f, ring * 2.0f, 2.4f * hold);
+
+        g.setColour(node.colour.withAlpha(0.75f * hold));
+        g.drawEllipse(centre.x - ring, centre.y - ring, ring * 2.0f, ring * 2.0f, 1.5f * hold);
+
+        // A white core for the instant of contact, so the hit registers even at a glance
+        const float pop = rNode * 0.7f * beat;
+        if (pop > 0.5f)
+        {
+            g.setColour(juce::Colours::white.withAlpha(0.55f * beat));
+            g.fillEllipse(centre.x - pop, centre.y - pop, pop * 2.0f, pop * 2.0f);
+        }
+
+        const float halo = rNode * 3.2f;
+        g.setGradientFill(juce::ColourGradient(node.colour.withAlpha(0.34f * hold), centre.x, centre.y,
                                                juce::Colours::transparentBlack,
                                                centre.x + halo, centre.y, true));
         g.fillEllipse(centre.x - halo, centre.y - halo, halo * 2.0f, halo * 2.0f);
@@ -2224,15 +2346,6 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
                         juce::degreesToRadians(-58.0f), juce::degreesToRadians(24.0f), true);
     g.setColour(juce::Colours::white.withAlpha(0.22f));
     g.strokePath(sheen, juce::PathStrokeType(1.2f));
-
-    // A negative star subtracts rather than adds, so it gets a bar through it - polarity is the
-    // one thing you must never have to guess about.
-    if (node.sensitivity < -0.01f)
-    {
-        const float bar = m.nodeRadius * 1.5f;
-        g.setColour(juce::Colours::white.withAlpha(0.85f));
-        g.drawLine(centre.x - bar, centre.y, centre.x + bar, centre.y, 1.8f);
-    }
 
     if (node.label.isNotEmpty())
     {
@@ -2387,30 +2500,10 @@ void InvisConstellation::paint(juce::Graphics& g)
     if (grab == Grab::Sensitivity && grabbedIndex >= 0)
         paintSensitivityReadout(g, grabbedIndex);
 
-    for (const auto& cl : parallelClusters)
-    {
-        if (cl.stars.size() < 3) continue;
-
-        float gate = 0.0f;
-        for (int idx : cl.stars)
-            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-                gate = std::max(gate, contribs[static_cast<size_t>(idx)].glow);
-
-        paintFigureHub(g, cl.stars, std::min(1.0f, gate));
-    }
-
     for (int p = 0; p < getNumObservers(); ++p)
         paintObserver(g, p);
 
-    // Glass sheen last, over everything: a highlight things can be drawn on top of is paint, not
-    // glass.
-    const auto m = getMetrics(padSize);
-    const auto glass = content.reduced(m.bezelWidth);
-    g.setGradientFill(juce::ColourGradient(
-        juce::Colours::white.withAlpha(0.055f), glass.getX(), glass.getY(),
-        juce::Colours::transparentBlack, glass.getX() + glass.getWidth() * 0.55f,
-        glass.getY() + glass.getHeight() * 0.45f, false));
-    g.fillRoundedRectangle(glass, m.corner * 0.8f);
+    juce::ignoreUnused(content);
 }
 
 } // namespace invis::ui

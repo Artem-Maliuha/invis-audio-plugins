@@ -73,6 +73,15 @@ public:
 
     std::function<void(int index, const juce::String& path)> onPresetChanged;
 
+    /**
+     * The plugin's state tree was REPLACED wholesale - by an A/B/C switch or a preset recall.
+     *
+     * Parameters look after themselves through their attachments. Anything a plugin keeps in the
+     * state tree that is NOT a parameter has no such path back, so without this it silently
+     * survives a slot switch: the knobs move and the instrument does not.
+     */
+    std::function<void()> onStateReplaced;
+
     ui::InvisButton& getBypassButton() { return bypassButton; }
 
 private:
