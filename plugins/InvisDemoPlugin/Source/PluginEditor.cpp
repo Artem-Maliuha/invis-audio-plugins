@@ -320,14 +320,71 @@ InvisDemoPluginEditor::SkyTools::SkyTools(InvisDemoPluginEditor& o) : owner(o)
         addAndMakeVisible(b);
     };
 
-    key(addStarButton,   "+ STAR",  [this]() { owner.chooseEffectThen({}); });
-    key(addRandomButton, "+ RND",   [this]() { owner.addRandomStar(); });
+    // The captions carry the verb now, so the keys carry only the noun: "ADD: STAR" rather than
+    // "+ STAR" sitting under a heading that already said add.
+    key(addStarButton,   "STAR",   [this]() { owner.chooseEffectThen({}); });
+    key(addRandomButton, "RANDOM", [this]() { owner.addRandomStar(); });
 
     // Two shufflers, because they shuffle different things. One rebuilds the INSTRUMENT - where
     // the stars sit and how they are joined; the other only moves WHERE YOU ARE STANDING, which
     // is the fastest way to hear what an instrument you already like can do.
-    key(shuffleStarsButton,    "STARS",   [this]() { owner.constellation.randomise(); });
-    key(shuffleObserverButton, "OBSERVER", [this]() { owner.constellation.randomiseObservers(); });
+    // Three shufflers, because they roll three different questions. STARS is the instrument -
+    // where they sit and how they are joined. SENS is how it is VOICED - how far each one carries.
+    // OBSERVER is only where you are standing. Rolling them together meant you could never keep a
+    // figure you liked and re-voice just that.
+    key(shuffleStarsButton,    "STARS",         [this]() { owner.constellation.randomise(); });
+    key(shuffleSensButton,     "SENSITIVITIES", [this]() { owner.constellation.randomiseSensitivities(); });
+    key(shuffleObserverButton, "OBSERVERS",     [this]() { owner.constellation.randomiseObservers(); });
+
+    // Children included: without this the panel never hears about the cursor arriving on a key.
+    addMouseListener(this, true);
+    updateAlpha();
+}
+
+int InvisDemoPluginEditor::SkyTools::getRequiredWidth() const
+{
+    const auto font = invis::ui::InvisFonts::getDisplayFont(8.0f, false);
+    const auto caption = [&font](const juce::String& t)
+    { return juce::GlyphArrangement::getStringWidthInt(font, t) + 4; };
+
+    using namespace invis::ui;
+
+    const int mode = caption("MODE:") + layout::kGapBonded + kChannelCellWidth;
+
+    const int add = caption("ADD:") + layout::kGapBonded
+                  + addStarButton.getIntrinsicSize().x + layout::kGapBonded
+                  + addRandomButton.getIntrinsicSize().x;
+
+    const int random = caption("RANDOMIZE:") + layout::kGapBonded
+                     + shuffleStarsButton.getIntrinsicSize().x + layout::kGapBonded
+                     + shuffleSensButton.getIntrinsicSize().x + layout::kGapBonded
+                     + shuffleObserverButton.getIntrinsicSize().x;
+
+    return mode + layout::kGapGroup + add + layout::kGapGroup + random;
+}
+
+void InvisDemoPluginEditor::SkyTools::paint(juce::Graphics& g)
+{
+    const auto theme = invis::ui::InvisTheme::getGlobalDefault();
+
+    // NAMES THE GROUPS, because the keys alone do not: "STAR" and "STARS" are one letter apart and
+    // do opposite things - one makes a star, the other throws the whole chart in the air.
+    //
+    // Inline, reading as a sentence: "ADD: STAR RANDOM". A caption stacked above needs its own row
+    // of height on a bar that is floating over the instrument, and the eye still has to travel
+    // down to the keys to find out what it labels.
+    g.setFont(invis::ui::InvisFonts::getDisplayFont(8.0f, false));
+    g.setColour(theme.textSecondary.withAlpha(0.55f));
+
+    const auto caption = [&](const juce::String& text, juce::Rectangle<int> at)
+    {
+        if (!at.isEmpty())
+            g.drawText(text, at.toFloat(), juce::Justification::centredRight, false);
+    };
+
+    caption("MODE:", modeCaption);
+    caption("ADD:", addCaption);
+    caption("RANDOMIZE:", randomCaption);
 }
 
 void InvisDemoPluginEditor::SkyTools::resized()
@@ -336,22 +393,40 @@ void InvisDemoPluginEditor::SkyTools::resized()
 
     auto area = getLocalBounds();
 
-    // Right to left, grouped by what they do to: the shufflers, then the two ways to add, then the
-    // channel mode - which is the odd one out, so it gets the wider gap.
+    // Right to left: each group places its keys, then claims the caption slot to their left, so
+    // the label always ends up beside exactly what it names however the keys are sized.
+    const auto captionSlot = [&area](const juce::String& text)
+    {
+        const auto font = invis::ui::InvisFonts::getDisplayFont(8.0f, false);
+        const int width = juce::GlyphArrangement::getStringWidthInt(font, text) + 4;
+
+        return area.removeFromRight(width);
+    };
+
     shuffleObserverButton.setBoundsCentredIn(
         area.removeFromRight(shuffleObserverButton.getIntrinsicSize().x));
     area.removeFromRight(layout::kGapBonded);
+    shuffleSensButton.setBoundsCentredIn(
+        area.removeFromRight(shuffleSensButton.getIntrinsicSize().x));
+    area.removeFromRight(layout::kGapBonded);
     shuffleStarsButton.setBoundsCentredIn(
         area.removeFromRight(shuffleStarsButton.getIntrinsicSize().x));
+    area.removeFromRight(layout::kGapBonded);
+    randomCaption = captionSlot("RANDOMIZE:");
 
     area.removeFromRight(layout::kGapGroup);
 
     addRandomButton.setBoundsCentredIn(area.removeFromRight(addRandomButton.getIntrinsicSize().x));
     area.removeFromRight(layout::kGapBonded);
     addStarButton.setBoundsCentredIn(area.removeFromRight(addStarButton.getIntrinsicSize().x));
+    area.removeFromRight(layout::kGapBonded);
+    addCaption = captionSlot("ADD:");
 
     area.removeFromRight(layout::kGapGroup);
-    channelModeCell.setBounds(area.removeFromRight(54));
+
+    channelModeCell.setBounds(area.removeFromRight(kChannelCellWidth));
+    area.removeFromRight(layout::kGapBonded);
+    modeCaption = captionSlot("MODE:");
 }
 
 // ==============================================================================================
@@ -663,7 +738,7 @@ void InvisDemoPluginEditor::layoutWorkspace()
 
     skyTools.setBounds(constellation.getBounds()
                            .removeFromTop(kSkyToolsHeight + 2 * layout::kGapRelated)
-                           .removeFromRight(kSkyToolsWidth + layout::kGapRelated)
+                           .removeFromRight(skyTools.getRequiredWidth() + 3 * layout::kGapRelated)
                            .reduced(layout::kGapRelated));
     skyTools.toFront(false);
 }

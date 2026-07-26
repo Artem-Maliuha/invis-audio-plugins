@@ -90,19 +90,40 @@ private:
      */
     struct SkyTools : juce::Component {
         explicit SkyTools(InvisDemoPluginEditor& o);
+        void paint(juce::Graphics& g) override;
         void resized() override;
 
-        void mouseEnter(const juce::MouseEvent&) override { setAlpha(1.0f); }
-        void mouseExit(const juce::MouseEvent&) override  { setAlpha(kRestAlpha); }
+        // BOTH ROUTE THROUGH ONE PLACE. Setting the alpha directly in each handler made the row
+        // flicker: moving the cursor from the panel ONTO A BUTTON is an exit as far as the parent
+        // is concerned, so it faded out at the exact moment you reached for something. Asking
+        // whether the mouse is over this component OR ANY CHILD is the only question worth asking.
+        void mouseEnter(const juce::MouseEvent&) override { updateAlpha(); }
+        void mouseExit(const juce::MouseEvent&) override  { updateAlpha(); }
+        void updateAlpha() { setAlpha(isMouseOver(true) ? 1.0f : kRestAlpha); }
+
+        /**
+         * Exactly as wide as its contents, measured rather than guessed.
+         *
+         * A hand-tuned constant clipped "MODE:" off the left end the moment the labels grew, and
+         * would do it again on the next rename - the row is built from intrinsic sizes and text
+         * widths, so it is the only thing that can answer this correctly.
+         */
+        int getRequiredWidth() const;
 
         static constexpr float kRestAlpha = 0.42f;
+        static constexpr int kChannelCellWidth = 54;
 
         InvisDemoPluginEditor& owner;
         invis::ui::InvisCellSelector channelModeCell;
         invis::ui::InvisButton addStarButton;      // asks which effect
         invis::ui::InvisButton addRandomButton;    // does not
         invis::ui::InvisButton shuffleStarsButton;
+        invis::ui::InvisButton shuffleSensButton;
         invis::ui::InvisButton shuffleObserverButton;
+
+        // Filled by resized(), read by paint(): a caption sits beside the group it names, and only
+        // the layout knows where that ended up.
+        juce::Rectangle<int> modeCaption, addCaption, randomCaption;
     };
 
     /** The chassis's own dropdown - a menu here is part of the instrument, not of the host. */
@@ -110,7 +131,6 @@ private:
 
     SkyTools skyTools { *this };
     static constexpr int kSkyToolsHeight = 22;
-    static constexpr int kSkyToolsWidth  = 400;
 
     /**
      * Inspector for one star. Lives in the PLUGIN, not in the atom: choosing which effect a star

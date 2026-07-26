@@ -1070,10 +1070,7 @@ void InvisConstellation::randomise()
         nodes[static_cast<size_t>(i)].position = {
             juce::jlimit(0.06f, 0.94f, 0.5f + std::cos(angle) * dist),
             juce::jlimit(0.06f, aspect - 0.06f, aspect * 0.5f + std::sin(angle) * dist * aspect) };
-        // Reach is the sensitivity now, so shuffling the chart shuffles how far each star
-        // carries. Kept off both ends: a star that reaches nothing, or one that swallows the whole
-        // sky, is a star you would only ever have to fix by hand afterwards.
-        nodes[static_cast<size_t>(i)].sensitivity = 0.22f + rng.nextFloat() * 0.56f;
+
     }
 
     // AND HOW THEY ARE JOINED. Shuffling only the positions rearranged the same figure over and
@@ -1107,6 +1104,22 @@ void InvisConstellation::randomise()
     }
 
     lastEntry[0] = lastEntry[1] = -1;
+
+    if (onGeometryChanged) onGeometryChanged();
+    notifyWeights();
+    repaint();
+}
+
+void InvisConstellation::randomiseSensitivities()
+{
+    // SEPARATE FROM THE SHAPE, because they are separate questions. Where the stars sit and how
+    // they are joined is the instrument; how far each one carries is how it is voiced. Rolling
+    // both at once meant you could never keep a figure you liked and only re-voice it.
+    //
+    // Kept off both ends: a star that reaches nothing, and one that swallows the whole sky, are
+    // both results you would only ever have to fix by hand afterwards.
+    for (auto& node : nodes)
+        node.sensitivity = 0.22f + rng.nextFloat() * 0.56f;
 
     if (onGeometryChanged) onGeometryChanged();
     notifyWeights();

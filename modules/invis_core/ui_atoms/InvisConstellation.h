@@ -334,8 +334,11 @@ public:
      * rather than uniformly at random: pure uniform noise clusters and leaves bald patches, so
      * half the throws would produce a figure with stars piled on top of each other.
      */
-    /** Shuffles the stars: where they sit AND how they are joined. */
+    /** Shuffles the stars: where they sit AND how they are joined. Reach is left alone. */
     void randomise();
+
+    /** Shuffles how far each star carries, leaving the figure you drew intact. */
+    void randomiseSensitivities();
 
     /** Drops the observers somewhere new, leaving the chart itself alone. */
     void randomiseObservers();
