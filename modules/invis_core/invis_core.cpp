@@ -19,6 +19,8 @@
 #include "functional_modules/output_sidebar/OutputSidebarUI.cpp"
 #include "functional_modules/top_sidebar/TopSidebarDSP.cpp"
 #include "functional_modules/top_sidebar/TopSidebarUI.cpp"
+#include "effects/InvisEffectSlot.cpp"
+#include "effects/InvisConstellationEngine.cpp"
 #include "chassis/InvisChassisUI.cpp"
 #include "functional_modules/oversampling/OversamplingDSP.cpp"
 #include "functional_modules/midi_learn/MidiLearnModule.cpp"

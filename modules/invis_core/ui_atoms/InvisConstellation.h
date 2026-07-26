@@ -529,6 +529,21 @@ public:
         return toPixels(normalized);
     }
 
+    /**
+     * The routing as STAGES - what the audio side needs and nothing else.
+     *
+     * `stages[k]` is the set of stars that run in parallel at hop k, each with the gain it should
+     * be fed. Stages run in series. Everything the chart knows about figures, clusters and links
+     * has already been resolved here, so the caller never has to walk any of it.
+     */
+    struct RoutingStages {
+        struct Entry { int star { -1 }; float gain { 0.0f }; };
+
+        std::vector<std::vector<Entry>> stages;
+    };
+
+    RoutingStages getRoutingStages(int observerIndex) const;
+
     std::function<void(int index)> onNodeClicked;
 
     /**
@@ -596,6 +611,7 @@ private:
     void paintNode(juce::Graphics& g, int index, const ChartFrame& frame);
     void paintSensitivityReadout(juce::Graphics& g, int index);
     void paintFigureHalo(juce::Graphics& g, const std::vector<int>& stars, float gate);
+
 
 
     /** The whole frame's view of the chart, so nothing below re-derives the routing. */

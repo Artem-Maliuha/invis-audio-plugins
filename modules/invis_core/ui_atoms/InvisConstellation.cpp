@@ -700,8 +700,12 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     auto& c = out[static_cast<size_t>(idx)];
                     c.chainOrder = order;
                     c.isEntry = marksEntry && isEntry;
-                    c.amount = silent ? 0.0f
-                                      : feed * share * nodes[static_cast<size_t>(idx)].sensitivity;
+
+                    // No sensitivity here either - it is distance, and it has already decided how
+                    // much arrives, inside `arrival`. The share is the internal balance and it sums
+                    // to one across the cluster, so a stage's total is `feed` however many members
+                    // it has: joining stars morphs between them, it does not make them louder.
+                    c.amount = silent ? 0.0f : feed * share;
 
                     // GLOW IS NOT THE SHARE. The share is normalised across the members, so a
                     // four-star cycle gives each one a quarter - and walking INTO the figure made
@@ -761,6 +765,34 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
     }
 
     return out;
+}
+
+InvisConstellation::RoutingStages InvisConstellation::getRoutingStages(int observerIndex) const
+{
+    RoutingStages plan;
+
+    const auto heard = getContributions(juce::jlimit(0, 1, observerIndex));
+
+    int deepest = -1;
+    for (const auto& c : heard) deepest = std::max(deepest, c.chainOrder);
+    if (deepest < 0) return plan;
+
+    plan.stages.resize(static_cast<size_t>(deepest + 1));
+
+    for (size_t i = 0; i < heard.size(); ++i)
+    {
+        const auto& c = heard[i];
+        if (c.chainOrder < 0) continue;
+
+        // A star with nothing arriving is left OUT rather than added at zero gain. Its slot then
+        // stops being run at all, which is the difference between a silent reverb and one that is
+        // still churning a tail nobody can hear.
+        if (std::abs(c.amount) <= 0.0004f) continue;
+
+        plan.stages[static_cast<size_t>(c.chainOrder)].push_back({ static_cast<int>(i), c.amount });
+    }
+
+    return plan;
 }
 
 ChartFrame InvisConstellation::takeSnapshot() const

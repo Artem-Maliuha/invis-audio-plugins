@@ -126,6 +126,15 @@ Every plugin developed in this repository MUST implement the following 4 feature
 - **Ambient Light Propagation**: Emissive elements MUST project soft light fields onto adjacent materials (e.g. metal cap lathe grooves, surrounding faceplate).
 - **Realistic Optical Layering**: Shadow/bevel housing $\rightarrow$ Surface glow reflection $\rightarrow$ Translucent body $\rightarrow$ Neon halo $\rightarrow$ High-intensity phosphor core.
 
+### 4b. Effects Layer (`modules/invis_core/effects`) — MANDATORY
+- **An algorithm is MONO by contract.** In the split observer modes the two streams enter the chart at different stars and walk it in different orders, so one stereo instance cannot be in two places in two chains at once. A star is instantiated PER STREAM. This is not a cost: single-observer modes give one stereo pair of mono instances, split modes give two — the samples processed are the same, only the object count doubles. A genuinely stereo effect (ping-pong, width) cannot be honest here and must declare itself.
+- **A star is a BLOCK, not an algorithm.** `InvisEffectSlot` owns band limiting and mix so no algorithm implements them, and the dry tap is taken **before** the filters: they shape what FEEDS the effect and never touch the signal that bypasses it.
+- **A family is one algorithm; a catalogue entry is a place to stand in it.** HALL and DELAY are the same machine at different sizes; TAPE and CRUSH the same curve at different characters. Add entries as recipes in `InvisEffectSlot.cpp`, not as classes.
+- **Parameters are DESCRIBED, not hand-laid.** An algorithm publishes `EffectParam` descriptors and the panel builds itself. Never write a bespoke panel per algorithm.
+- **Compensate output.** A control that changes character must not change loudness, or you will hear the level and call it the effect. Measure the makeup over a cycle, not at one probe point — a single probe is meaningless for a folding curve.
+- **Cap every feedback path below unity** and back the input off as feedback rises. The chart can put several stages in series and a star can be dragged while its own tail is ringing.
+- Verify DSP numerically before shipping it: silence in → silence out, finite and bounded at every extreme, loudness stable across a character sweep. Reading the code does not tell you any of this.
+
 ### 5a. The Chassis (`InvisChassisDSP` / `InvisChassisUI`) — MANDATORY
 - **Input at the front, output at the back, and the same wiring between them every single time.** Only what sits BETWEEN them is a particular plugin. A plugin MUST NOT reassemble the ends by hand.
 - `InvisChassisDSP::addParameters(layout)` adds every frame parameter under FIXED prefixes (`in_side_`, `out_side_`, `top_`, `os_`). Prefixes are not arguments — a prefix that varies per plugin is one that gets mistyped, and the failure is silent.

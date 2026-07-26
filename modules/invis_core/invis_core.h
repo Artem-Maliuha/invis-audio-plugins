@@ -55,6 +55,12 @@
 #include "functional_modules/top_sidebar/TopSidebarUI.h"
 
 // The chassis: the frame every plugin wears, wired. Include LAST - it composes the sidebars above.
+// Effects: the algorithms, the block around them, and the engine that runs the chart.
+#include "effects/InvisEffect.h"
+#include "effects/InvisAlgorithms.h"
+#include "effects/InvisEffectSlot.h"
+#include "effects/InvisConstellationEngine.h"
+
 #include "chassis/InvisChassisDSP.h"
 #include "chassis/InvisChassisUI.h"
 #include "functional_modules/oversampling/OversamplingDSP.h"

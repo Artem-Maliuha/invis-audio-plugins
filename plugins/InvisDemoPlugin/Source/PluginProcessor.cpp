@@ -46,12 +46,14 @@ void InvisDemoPluginProcessor::prepareToPlay(double sampleRate, int samplesPerBl
 
     chassis.prepare(spec);
     inputFilterDSP.prepare(spec);
+    engine.prepare(spec);
 }
 
 void InvisDemoPluginProcessor::releaseResources()
 {
     chassis.reset();
     inputFilterDSP.reset();
+    engine.reset();
 }
 
 void InvisDemoPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -87,6 +89,7 @@ void InvisDemoPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     chassis.process(buffer, apvts, isNonRealtime(), [this](juce::AudioBuffer<float>& b)
     {
         inputFilterDSP.process(b, apvts);
+        engine.process(b);
     });
 }
 

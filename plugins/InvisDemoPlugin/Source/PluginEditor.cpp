@@ -166,7 +166,7 @@ void InvisDemoPluginEditor::StarPanel::showFor(int starIndex)
 
     refreshFromNode();
     repaint();
-    owner.effectPanel.repaint();
+    owner.effectPanel.showFor(index);
 }
 
 void InvisDemoPluginEditor::StarPanel::paintPanelShell(juce::Graphics& g,
@@ -258,24 +258,96 @@ void InvisDemoPluginEditor::StarPanel::resized()
 
 // ================================ EFFECT PANEL ================================================
 
+InvisDemoPluginEditor::EffectPanel::EffectPanel(InvisDemoPluginEditor& o) : owner(o)
+{
+    for (int i = 0; i < invis::dsp::kMaxEffectParams; ++i)
+    {
+        auto& k = paramKnobs[static_cast<size_t>(i)];
+        k.setKnobSize(invis::ui::InvisKnobSize::XS);
+        k.onValueChanged = [this, i](float v) {
+            if (index < 0) return;
+            owner.processorRef.engine.setStarParam(index, i, v);
+        };
+        addChildComponent(k);
+    }
+}
+
+void InvisDemoPluginEditor::EffectPanel::showFor(int starIndex)
+{
+    index = starIndex;
+    numShown = 0;
+
+    if (index >= 0)
+    {
+        int count = 0;
+        const auto* descs = invis::dsp::getAlgorithmParams(
+            owner.processorRef.engine.getStarKind(index), count);
+
+        numShown = juce::jmin(count, invis::dsp::kMaxEffectParams);
+
+        for (int i = 0; i < numShown; ++i)
+        {
+            const auto& d = descs[i];
+            auto& k = paramKnobs[static_cast<size_t>(i)];
+
+            k.setLabel(d.name);
+            k.setScaleTicks({ { 0.0f, {} }, { 1.0f, {} } });
+
+            // The descriptor owns the units, so the readout is right for a new algorithm the day it
+            // is written rather than the day somebody remembers to format it.
+            k.setValueFormatter([d](float v) {
+                return juce::String(d.toPlain(v), d.decimals) + d.suffix;
+            });
+
+            k.setValue(owner.processorRef.engine.getStarParam(index, i),
+                       juce::dontSendNotification);
+        }
+    }
+
+    for (int i = 0; i < invis::dsp::kMaxEffectParams; ++i)
+        paramKnobs[static_cast<size_t>(i)].setVisible(i < numShown);
+
+    resized();
+    repaint();
+}
+
+void InvisDemoPluginEditor::EffectPanel::resized()
+{
+    using namespace invis::ui;
+
+    auto area = getLocalBounds().reduced(10);
+    area.removeFromTop(kPanelHeadingHeight + layout::kGapRelated);
+
+    const int knobH = InvisKnob::getIntrinsicSize(InvisKnobSize::XS).y;
+
+    for (int i = 0; i < numShown; i += 2)
+    {
+        auto row = area.removeFromTop(knobH);
+
+        paramKnobs[static_cast<size_t>(i)].setBoundsCentredIn(row.removeFromLeft(row.getWidth() / 2));
+        if (i + 1 < numShown)
+            paramKnobs[static_cast<size_t>(i + 1)].setBoundsCentredIn(row);
+
+        area.removeFromTop(layout::kGapRelated);
+    }
+}
+
 void InvisDemoPluginEditor::EffectPanel::paint(juce::Graphics& g)
 {
     const auto theme = invis::ui::InvisTheme::getGlobalDefault();
     auto bounds = getLocalBounds().toFloat();
 
-    const int index = owner.starPanel.index;
     const bool has = index >= 0;
 
     StarPanel::paintPanelShell(g, bounds, has ? owner.constellation.getNode(index).label.toUpperCase()
                                               : juce::String("EFFECT"));
 
-    // RESERVED, AND HONEST ABOUT IT. The algorithms do not exist yet, so this says so rather than
-    // showing a row of knobs wired to nothing - a control that does not do anything is worse than
-    // an empty panel, because you cannot tell it apart from one that is broken.
-    g.setColour(theme.textSecondary.withAlpha(0.35f));
-    g.setFont(invis::ui::InvisFonts::getDisplayFont(9.5f, false));
-    g.drawText(has ? "NO PARAMETERS YET" : "CLICK A STAR",
-               bounds, juce::Justification::centred, false);
+    if (!has)
+    {
+        g.setColour(theme.textSecondary.withAlpha(0.35f));
+        g.setFont(invis::ui::InvisFonts::getDisplayFont(9.5f, false));
+        g.drawText("CLICK A STAR", bounds, juce::Justification::centred, false);
+    }
 }
 
 // ================================ SKY TOOLS ===================================================
@@ -490,11 +562,9 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     constellation.setPadDesignSize({
         kWorkspaceWidth - kStarPanelWidth - invis::ui::layout::kGapGroup,
         std::max(kWorkspaceHeight, invis::modules::InputSidebarUI::getMinimumHeight()) });
-    constellation.onWeightsChanged = [this](int observerIndex, const std::vector<float>& w) {
-        // Weights are NOT normalised: outside every aura the signal is dry. Once real effects
-        // exist these become parallel send levels, one set per channel stream.
-        juce::ignoreUnused(observerIndex, w);
-    };
+    // MOVING THE OBSERVER CHANGES THE ROUTE without touching the geometry: a different star becomes
+    // the entry, and the whole chain renumbers behind it. Geometry callbacks alone would miss it.
+    constellation.onWeightsChanged = [this](int, const std::vector<float>&) { pushChartToEngine(); };
     workspace.addAndMakeVisible(constellation);
 
     constellation.onNodeClicked = [this](int index) { starPanel.showFor(index); };
@@ -503,12 +573,14 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     // been dragged, so the two quietly disagreed until you reselected it.
     constellation.onNodeChanged = [this](int index) {
         if (starPanel.index == index) starPanel.showFor(index);
+        pushChartToEngine();
         pushChartToState();
     };
 
     // A/B/C and preset recall replace the whole tree; the chart lives in it, so it comes back too.
     chassis.onStateRestored = [this]() { pullChartFromState(); };
     pullChartFromState();
+    pushChartToEngine();   // an editor opened on an empty chart still has to hand the engine a plan
 
     // The chart offers the SPOT; which effect lands there is the bench's knowledge, not the atom's.
     constellation.onRequestAddNode = [this](juce::Point<float> at) { chooseEffectThen(at); };
@@ -520,6 +592,7 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     constellation.onGeometryChanged = [this]() {
         if (starPanel.index >= constellation.getNumNodes()) starPanel.showFor(-1);
         skyTools.refreshLimit();
+        pushChartToEngine();
         pushChartToState();
     };
 
@@ -613,6 +686,51 @@ void InvisDemoPluginEditor::resized()
     invis::ui::applyDesignZoom(canvas, designSize.x, designSize.y, getLocalBounds());
 }
 
+void InvisDemoPluginEditor::pushChartToEngine()
+{
+    auto& engine = processorRef.engine;
+
+    for (int i = 0; i < constellation.getNumNodes(); ++i)
+    {
+        const auto& node = constellation.getNode(i);
+
+        if (engine.getStarAlgorithm(i) != node.label)
+            engine.setStarAlgorithm(i, node.label);
+
+        engine.setStarBlock(i, node.hpf, node.lpf, node.dryWet);
+    }
+
+    // ONE PLAN, BOTH STREAMS. In the linked modes the second is never read, but filling it costs
+    // nothing and means switching to L R cannot catch the engine holding a stale route.
+    invis::dsp::RoutingPlan plan;
+    plan.mode = constellation.getChannelMode();
+    plan.numStreams = constellation.getNumObservers();
+
+    for (int s = 0; s < 2; ++s)
+    {
+        const auto stages = constellation.getRoutingStages(s);
+        auto& stream = plan.streams[s];
+
+        stream.numStages = juce::jmin(static_cast<int>(stages.stages.size()),
+                                      invis::ui::InvisConstellation::kMaxNodes);
+
+        for (int st = 0; st < stream.numStages; ++st)
+        {
+            const auto& from = stages.stages[static_cast<size_t>(st)];
+            auto& to = stream.stages[st];
+
+            to.count = juce::jmin(static_cast<int>(from.size()),
+                                  invis::ui::InvisConstellation::kMaxNodes);
+
+            for (int e = 0; e < to.count; ++e)
+                to.entries[e] = { from[static_cast<size_t>(e)].star,
+                                  from[static_cast<size_t>(e)].gain };
+        }
+    }
+
+    engine.setPlan(plan);
+}
+
 void InvisDemoPluginEditor::pushChartToState()
 {
     if (restoringChart) return;
@@ -633,6 +751,7 @@ void InvisDemoPluginEditor::pullChartFromState()
 
     const juce::ScopedValueSetter<bool> guard(restoringChart, true);
     constellation.restoreFromValueTree(tree);
+    pushChartToEngine();
 
     // The channel mode came back with the chart, so the control that sets it has to come back too
     // - otherwise the observer says M+S while the panel still reads L+R.

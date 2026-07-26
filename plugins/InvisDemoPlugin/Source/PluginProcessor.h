@@ -40,10 +40,12 @@ public:
     // identical in every plugin of the series, so it is owned rather than reassembled.
     invis::modules::InvisChassisDSP chassis;
 
+    // WHAT THIS PLUGIN IS. Everything else on this processor is frame.
+    invis::dsp::InvisConstellationEngine engine;
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    // What this particular plugin IS. Everything else on this processor is frame.
     invis::modules::InputFilterDSP inputFilterDSP;
 
     double currentSampleRate { 44100.0 };

@@ -67,6 +67,15 @@ private:
      */
     void chooseEffectThen(std::optional<juce::Point<float>> at, juce::Component* anchor = nullptr);
 
+    /**
+     * Chart -> ENGINE. Route, algorithms and block settings, all of it.
+     *
+     * One place, called whenever anything about the chart moves. Pushing each kind of change from
+     * the control that made it would mean every new control has to remember to do it, and the one
+     * that forgets produces a chart that looks right and sounds like the last thing you did.
+     */
+    void pushChartToEngine();
+
     /** Chart -> state tree, so compare slots and host save actually contain the instrument. */
     void pushChartToState();
     void pullChartFromState();
@@ -182,10 +191,21 @@ private:
      * appended to a list that would then mean two things at once.
      */
     struct EffectPanel : juce::Component {
-        explicit EffectPanel(InvisDemoPluginEditor& o) : owner(o) {}
+        explicit EffectPanel(InvisDemoPluginEditor& o);
         void paint(juce::Graphics& g) override;
+        void resized() override;
+
+        /** Rebuilds the knobs from whatever the selected star's algorithm says it has. */
+        void showFor(int starIndex);
 
         InvisDemoPluginEditor& owner;
+        int index { -1 };
+        int numShown { 0 };
+
+        // BUILT FROM DESCRIPTIONS, not hand-written per algorithm. Fourteen catalogue entries with
+        // hand-laid panels would be fourteen layouts drifting apart, and product code in the way of
+        // every new algorithm.
+        std::array<invis::ui::InvisKnob, invis::dsp::kMaxEffectParams> paramKnobs;
     };
 
     StarPanel starPanel { *this };
