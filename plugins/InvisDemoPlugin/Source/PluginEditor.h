@@ -22,7 +22,7 @@ public:
     /** Height of a titled panel's heading strip, shared by every panel in the workspace. */
     static constexpr int kPanelHeadingHeight = 12;
 
-    static constexpr int kWorkspaceWidth  = 736;
+    static constexpr int kWorkspaceWidth  = 780;
     static constexpr int kWorkspaceHeight = 560;
 
     explicit InvisDemoPluginEditor(InvisDemoPluginProcessor& p);
@@ -145,9 +145,28 @@ private:
     // ALWAYS PRESENT, top right of the workspace. It used to float over the chart and appear only
     // on a click, which put the editing controls on top of the thing being edited and made the
     // chart jump about under the cursor. A prepared panel outside the field just fills in.
+    /**
+     * What the EFFECT is, as opposed to what the block around it does.
+     *
+     * The star panel holds the slot: reach, mix, band limiting - the things every star has
+     * whatever is dropped into it. An algorithm's own controls are a different kind of thing and
+     * change completely from one effect to the next, so they get their own place rather than being
+     * appended to a list that would then mean two things at once.
+     */
+    struct EffectPanel : juce::Component {
+        explicit EffectPanel(InvisDemoPluginEditor& o) : owner(o) {}
+        void paint(juce::Graphics& g) override;
+
+        InvisDemoPluginEditor& owner;
+    };
+
     StarPanel starPanel { *this };
-    static constexpr int kStarPanelWidth  = 200;
-    static constexpr int kStarPanelHeight = 330;
+    EffectPanel effectPanel { *this };
+
+    // Wider than it was. Two knobs side by side at 200 put their tick labels almost touching,
+    // which reads as cramped rather than as small - they were always the standard XS size.
+    static constexpr int kStarPanelWidth  = 244;
+    static constexpr int kStarPanelHeight = 316;
 
     PanelTheme currentPanelTheme { PanelTheme::DarkSlateCharcoal };
 

@@ -187,6 +187,7 @@ void InvisDemoPluginEditor::StarPanel::showFor(int starIndex)
 
     refreshFromNode();
     repaint();
+    owner.effectPanel.repaint();
 }
 
 void InvisDemoPluginEditor::StarPanel::paintPanelShell(juce::Graphics& g,
@@ -258,6 +259,8 @@ void InvisDemoPluginEditor::StarPanel::resized()
     // taken before the filters, so the mix reads above them rather than after.
     const int knobH = InvisKnob::getIntrinsicSize(InvisKnobSize::XS).y;
 
+    // Each knob gets an equal half and sits centred in it, so the pair reads as a pair rather than
+    // as two things that happen to be next to each other.
     auto pair = [](juce::Rectangle<int> row, InvisKnob& a, InvisKnob& b)
     {
         a.setBoundsCentredIn(row.removeFromLeft(row.getWidth() / 2));
@@ -272,6 +275,28 @@ void InvisDemoPluginEditor::StarPanel::resized()
     // in the run of things you reach for while dialling.
     area.removeFromBottom(20);
     deleteButton.setBoundsCentredIn(area.removeFromBottom(deleteButton.getIntrinsicSize().y));
+}
+
+// ================================ EFFECT PANEL ================================================
+
+void InvisDemoPluginEditor::EffectPanel::paint(juce::Graphics& g)
+{
+    const auto theme = invis::ui::InvisTheme::getGlobalDefault();
+    auto bounds = getLocalBounds().toFloat();
+
+    const int index = owner.starPanel.index;
+    const bool has = index >= 0;
+
+    StarPanel::paintPanelShell(g, bounds, has ? owner.constellation.getNode(index).label.toUpperCase()
+                                              : juce::String("EFFECT"));
+
+    // RESERVED, AND HONEST ABOUT IT. The algorithms do not exist yet, so this says so rather than
+    // showing a row of knobs wired to nothing - a control that does not do anything is worse than
+    // an empty panel, because you cannot tell it apart from one that is broken.
+    g.setColour(theme.textSecondary.withAlpha(0.35f));
+    g.setFont(invis::ui::InvisFonts::getDisplayFont(9.5f, false));
+    g.drawText(has ? "NO PARAMETERS YET" : "CLICK A STAR",
+               bounds, juce::Justification::centred, false);
 }
 
 // ================================ SKY TOOLS ===================================================
@@ -416,6 +441,7 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     // The chart offers the SPOT; which effect lands there is the bench's knowledge, not the atom's.
     constellation.onRequestAddNode = [this](juce::Point<float> at) { chooseEffectThen(at); };
     workspace.addAndMakeVisible(starPanel);
+    workspace.addAndMakeVisible(effectPanel);
     starPanel.showFor(-1);   // prepared and empty until a star is picked
 
     // Randomising rebuilds the chart, so whatever the inspector was holding is gone with it.
@@ -618,6 +644,10 @@ void InvisDemoPluginEditor::layoutWorkspace()
 
     starPanel.setBounds(inspectorColumn.removeFromTop(kStarPanelHeight));
     inspectorColumn.removeFromTop(layout::kGapGroup);
+
+    // The effect takes whatever is left below: its contents are unknown until the algorithms
+    // exist, so reserving a fixed height would be guessing at something we do not know yet.
+    effectPanel.setBounds(inspectorColumn);
 
     // NOTHING ABOVE THE SKY. The chart starts at the top of the workspace and simply is the
     // field - its tools float ON it rather than sitting in a row that would read as a lid.
