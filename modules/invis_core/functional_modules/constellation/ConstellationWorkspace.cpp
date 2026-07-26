@@ -12,6 +12,28 @@ const std::vector<ui::EffectType>& catalogue() { return ui::getEffectCatalogue()
 
 int numEffects() { return static_cast<int>(catalogue().size()); }
 
+/** Grouped by family, each entry carrying its own colour. Used by the sky AND by the inspector. */
+void buildEffectMenu(juce::PopupMenu& menu)
+{
+    auto shown = static_cast<ui::EffectFamily>(-1);
+
+    for (int i = 0; i < numEffects(); ++i)
+    {
+        const auto& e = catalogue()[static_cast<size_t>(i)];
+
+        if (i == 0 || e.family != shown)
+        {
+            shown = e.family;
+            menu.addSectionHeader(ui::getFamilyName(shown));
+        }
+
+        juce::PopupMenu::Item item(e.name);
+        item.itemID = i + 1;
+        item.colour = e.getColour();
+        menu.addItem(item);
+    }
+}
+
 } // namespace
 
 
@@ -27,6 +49,16 @@ ConstellationWorkspace::StarPanel::StarPanel(ConstellationWorkspace& o) : owner(
     effectCell.setPopupMode(true);
     effectCell.setValueJustification(juce::Justification::centred);
     effectCell.setItems(names);
+    effectCell.setPopupLookAndFeel(&owner.popupLook);
+
+    // THE SAME LIST THE SKY OFFERS. It was a bare list of names here while clicking empty sky gave
+    // family headings and a lit dot per entry - the same choice, presented as two different things,
+    // in one window. Built once so it cannot drift again.
+    effectCell.onBuildPopup = [](juce::PopupMenu& menu) { buildEffectMenu(menu); };
+    effectCell.onPopupResult = [this](int id) {
+        effectCell.setSelectedIndex(id - 1, juce::sendNotificationSync);
+    };
+
     effectCell.onIndexChanged = [this](int i, const juce::String& name) {
         if (index < 0) return;
         owner.constellation.setNodeLabel(index, name);
@@ -65,24 +97,41 @@ ConstellationWorkspace::StarPanel::StarPanel(ConstellationWorkspace& o) : owner(
     };
     addAndMakeVisible(dryWetKnob);
 
-    // Same language as the chassis filters, so a star and the sidebar do not need translating.
-    const auto hz = [](float norm, float lo, float hi) {
-        return lo * std::pow(hi / lo, norm);
-    };
+    // THE SAME FILTERS AS THE CHANNEL STRIP, down to the curve.
+    //
+    // They were a different instrument wearing the same two names: a plain logarithmic sweep here
+    // against the strip's skewed range, no detents, no OFF label, different tick marks. Two HPF
+    // knobs in one window that disagree about where 350 Hz sits are two knobs you cannot trust,
+    // and the number shown here has to be the number the DSP applies - see InvisEffectSlot, which
+    // reads the same range.
+    const auto& hpfRange = ui::starFilterRange(true);
+    const auto& lpfRange = ui::starFilterRange(false);
 
     hpfKnob.setKnobSize(ui::InvisKnobSize::XS);
     hpfKnob.setLabel("HPF");
     hpfKnob.setOffPosition(ui::OffPosition::Start);
     hpfKnob.setValueArcOrigin(ui::ValueArcOrigin::Start);
     hpfKnob.setDefaultValue(0.0f);
-    hpfKnob.setScaleTicks({ { 0.0f, "OFF" }, { 0.5f, "200" }, { 1.0f, "2k" } });
-    hpfKnob.setValueFormatter([this, hz](float v) {
-        return hpfKnob.isOff() ? juce::String("OFF")
-                               : juce::String(juce::roundToInt(hz(v, 20.0f, 2000.0f))) + " Hz";
+    hpfKnob.setScaleTicks({
+        { 0.0f, "OFF", true },
+        { hpfRange.convertTo0to1(100.0f), "100" },
+        { hpfRange.convertTo0to1(350.0f), "350" },
+        { hpfRange.convertTo0to1(1000.0f), "1k" },
+        { 1.0f, "2k" }
+    });
+    hpfKnob.setStickyPositions({ hpfRange.convertTo0to1(100.0f),
+                                 hpfRange.convertTo0to1(350.0f),
+                                 hpfRange.convertTo0to1(1000.0f) });
+    hpfKnob.setValueFormatter([this, hpfRange](float v) -> juce::String {
+        if (hpfKnob.isOff() || v <= 0.005f) return "OFF";
+
+        const float hz = hpfRange.convertFrom0to1(v);
+        return hz >= 1000.0f ? juce::String::formatted("%.1f kHz", hz / 1000.0f)
+                             : juce::String::formatted("%.0f Hz", hz);
     });
     hpfKnob.onValueChanged = [this](float v) {
-        hpfKnob.setOff(v <= 0.001f, juce::dontSendNotification);
-        if (index >= 0) owner.constellation.setNodeHpf(index, v);
+        hpfKnob.setOff(v <= 0.005f, juce::dontSendNotification);
+        if (index >= 0) owner.constellation.setNodeHpf(index, v <= 0.005f ? 0.0f : v);
     };
     addAndMakeVisible(hpfKnob);
 
@@ -91,14 +140,24 @@ ConstellationWorkspace::StarPanel::StarPanel(ConstellationWorkspace& o) : owner(
     lpfKnob.setOffPosition(ui::OffPosition::End);
     lpfKnob.setValueArcOrigin(ui::ValueArcOrigin::End);
     lpfKnob.setDefaultValue(1.0f);
-    lpfKnob.setScaleTicks({ { 0.0f, "1k" }, { 0.5f, "5k" }, { 1.0f, "OFF" } });
-    lpfKnob.setValueFormatter([this, hz](float v) {
-        return lpfKnob.isOff() ? juce::String("OFF")
-                               : juce::String(juce::roundToInt(hz(v, 1000.0f, 20000.0f))) + " Hz";
+    lpfKnob.setScaleTicks({
+        { 0.0f, "1k" },
+        { lpfRange.convertTo0to1(5000.0f), "5k" },
+        { lpfRange.convertTo0to1(12000.0f), "12k" },
+        { 1.0f, "OFF", true }
+    });
+    lpfKnob.setStickyPositions({ lpfRange.convertTo0to1(5000.0f),
+                                 lpfRange.convertTo0to1(12000.0f) });
+    lpfKnob.setValueFormatter([this, lpfRange](float v) -> juce::String {
+        if (lpfKnob.isOff() || v >= 0.995f) return "OFF";
+
+        const float hz = lpfRange.convertFrom0to1(v);
+        return hz >= 1000.0f ? juce::String::formatted("%.1f kHz", hz / 1000.0f)
+                             : juce::String::formatted("%.0f Hz", hz);
     });
     lpfKnob.onValueChanged = [this](float v) {
-        lpfKnob.setOff(v >= 0.999f, juce::dontSendNotification);
-        if (index >= 0) owner.constellation.setNodeLpf(index, v);
+        lpfKnob.setOff(v >= 0.995f, juce::dontSendNotification);
+        if (index >= 0) owner.constellation.setNodeLpf(index, v >= 0.995f ? 1.0f : v);
     };
     addAndMakeVisible(lpfKnob);
 
@@ -144,10 +203,10 @@ void ConstellationWorkspace::StarPanel::refreshFromNode()
     dryWetKnob.setValue(node.dryWet, juce::dontSendNotification);
 
     hpfKnob.setValue(node.hpf, juce::dontSendNotification);
-    hpfKnob.setOff(node.hpf <= 0.001f, juce::dontSendNotification);
+    hpfKnob.setOff(node.hpf <= 0.005f, juce::dontSendNotification);
 
     lpfKnob.setValue(node.lpf, juce::dontSendNotification);
-    lpfKnob.setOff(node.lpf >= 0.999f, juce::dontSendNotification);
+    lpfKnob.setOff(node.lpf >= 0.995f, juce::dontSendNotification);
 }
 
 void ConstellationWorkspace::StarPanel::showFor(int starIndex)
@@ -173,7 +232,8 @@ void ConstellationWorkspace::StarPanel::showFor(int starIndex)
 
 void ConstellationWorkspace::StarPanel::paintPanelShell(juce::Graphics& g,
                                                       juce::Rectangle<float> bounds,
-                                                      const juce::String& heading)
+                                                      const juce::String& heading,
+                                                      juce::Colour tint)
 {
     const auto theme = ui::InvisTheme::getGlobalDefault();
 
@@ -184,17 +244,41 @@ void ConstellationWorkspace::StarPanel::paintPanelShell(juce::Graphics& g,
     g.fillRoundedRectangle(bounds.translated(0.0f, 2.0f), ui::layout::kPanelCorner);
     g.setColour(juce::Colour::fromRGB(20, 25, 32).withAlpha(0.98f));
     g.fillRoundedRectangle(bounds, ui::layout::kPanelCorner);
-    g.setColour(juce::Colours::white.withAlpha(0.10f));
+
+    // THE PANEL WEARS THE EFFECT. A star's colour is how you find it on the chart, and the panel
+    // that edits it was the one place in the window that did not say which star you were editing -
+    // you had to read the heading. A wash from the top settles that before you read anything.
+    //
+    // Held to a wash rather than a fill: it has to name the star without competing with the chart,
+    // which is the only place on this panel where colour carries information.
+    if (!tint.isTransparent())
+    {
+        juce::Graphics::ScopedSaveState clip(g);
+        juce::Path shape;
+        shape.addRoundedRectangle(bounds, ui::layout::kPanelCorner);
+        g.reduceClipRegion(shape);
+
+        g.setGradientFill(juce::ColourGradient(
+            tint.withAlpha(0.20f), bounds.getCentreX(), bounds.getY(),
+            juce::Colours::transparentBlack, bounds.getCentreX(),
+            bounds.getY() + bounds.getHeight() * 0.62f, false));
+        g.fillRect(bounds);
+    }
+
+    g.setColour(tint.isTransparent() ? juce::Colours::white.withAlpha(0.10f)
+                                     : tint.withAlpha(0.28f));
     g.drawRoundedRectangle(bounds, ui::layout::kPanelCorner, 1.0f);
 
     auto head = bounds.reduced(10.0f, 0.0f).withHeight(kPanelHeadingHeight).translated(0.0f, 7.0f);
 
     g.setFont(ui::InvisFonts::getDisplayFont(9.5f, false));
-    g.setColour(theme.textSecondary.withAlpha(0.55f));
+    g.setColour(tint.isTransparent() ? theme.textSecondary.withAlpha(0.55f)
+                                     : tint.brighter(0.4f).withAlpha(0.85f));
     g.drawText(heading, head, juce::Justification::centredLeft, false);
 
     const float rule = head.getBottom() + 3.0f;
-    g.setColour(juce::Colours::white.withAlpha(0.08f));
+    g.setColour(tint.isTransparent() ? juce::Colours::white.withAlpha(0.08f)
+                                     : tint.withAlpha(0.22f));
     g.drawLine(bounds.getX() + 10.0f, rule, bounds.getRight() - 10.0f, rule, 1.0f);
 }
 
@@ -203,7 +287,9 @@ void ConstellationWorkspace::StarPanel::paint(juce::Graphics& g)
     const auto theme = ui::InvisTheme::getGlobalDefault();
     auto bounds = getLocalBounds().toFloat();
 
-    paintPanelShell(g, bounds, "STAR SETTINGS");
+    paintPanelShell(g, bounds, "STAR SETTINGS",
+                    index >= 0 ? owner.constellation.getNode(index).colour
+                               : juce::Colours::transparentBlack);
 
     if (index >= 0)
     {
@@ -344,8 +430,11 @@ void ConstellationWorkspace::EffectPanel::paint(juce::Graphics& g)
 
     const bool has = index >= 0;
 
-    StarPanel::paintPanelShell(g, bounds, has ? owner.constellation.getNode(index).label.toUpperCase()
-                                              : juce::String("EFFECT"));
+    StarPanel::paintPanelShell(g, bounds,
+                               has ? owner.constellation.getNode(index).label.toUpperCase()
+                                   : juce::String("EFFECT"),
+                               has ? owner.constellation.getNode(index).colour
+                                   : juce::Colours::transparentBlack);
 
     if (!has)
     {
@@ -722,25 +811,7 @@ void ConstellationWorkspace::chooseEffectThen(std::optional<juce::Point<float>> 
 {
     juce::PopupMenu menu;
 
-    // GROUPED BY FAMILY. The catalogue is ordered so the three bands fall out on their own, and a
-    // header at each boundary makes the grouping something you read rather than infer from hue.
-    ui::EffectFamily shown = static_cast<ui::EffectFamily>(-1);
-
-    for (int i = 0; i < numEffects(); ++i)
-    {
-        const auto& e = catalogue()[static_cast<size_t>(i)];
-
-        if (i == 0 || e.family != shown)
-        {
-            shown = e.family;
-            menu.addSectionHeader(ui::getFamilyName(shown));
-        }
-
-        juce::PopupMenu::Item item(e.name);
-        item.itemID = i + 1;
-        item.colour = e.getColour();
-        menu.addItem(item);
-    }
+    buildEffectMenu(menu);
 
     // UNDER THE CURSOR, where the star is about to appear. A menu anchored to a button somewhere
     // else makes you look away from the spot you just chose, and then look back to find out

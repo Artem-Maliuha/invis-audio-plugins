@@ -1,6 +1,6 @@
 #pragma once
 
-#include <juce_graphics/juce_graphics.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
 namespace invis::ui {
@@ -143,6 +143,21 @@ inline const std::vector<EffectType>& getEffectCatalogue()
     };
 
     return catalogue;
+}
+
+/**
+ * The filter ranges a STAR's block uses - identical to the channel strip's, on purpose.
+ *
+ * Defined once, here, so the knob that draws the number and the DSP that applies it cannot end up
+ * on different curves. They were: a plain logarithmic sweep in the panel against a skewed range in
+ * the strip, which put 350 Hz in two different places on two knobs with the same name.
+ */
+inline const juce::NormalisableRange<float>& starFilterRange(bool highPass)
+{
+    static const juce::NormalisableRange<float> hp { 20.0f, 2000.0f, 1.0f, 0.4f };
+    static const juce::NormalisableRange<float> lp { 1000.0f, 20000.0f, 1.0f, 0.4f };
+
+    return highPass ? hp : lp;
 }
 
 /**

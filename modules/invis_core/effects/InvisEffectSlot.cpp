@@ -1,4 +1,5 @@
 #include "InvisEffectSlot.h"
+#include "../design_system/InvisEffectPalette.h"
 
 namespace invis::dsp {
 
@@ -152,15 +153,17 @@ float InvisEffectSlot::getParam(int index) const
 void InvisEffectSlot::setFilters(float hpfNormalized, float lpfNormalized)
 {
     // Same mapping the chassis filters use, so a star and the sidebar speak one language.
-    hpfActive = hpfNormalized > 0.001f;
-    lpfActive = lpfNormalized < 0.999f;
+    hpfActive = hpfNormalized > 0.005f;
+    lpfActive = lpfNormalized < 0.995f;
 
+    // THE SAME CURVE THE KNOB DRAWS. See ui::starFilterRange - the mapping lives in one place so
+    // the frequency shown and the frequency applied cannot disagree.
     if (hpfActive)
-        hpf.update(20.0f * std::pow(100.0f, juce::jlimit(0.0f, 1.0f, hpfNormalized)),
+        hpf.update(ui::starFilterRange(true).convertFrom0to1(juce::jlimit(0.0f, 1.0f, hpfNormalized)),
                    modules::FilterSlope::Slope12, true);
 
     if (lpfActive)
-        lpf.update(1000.0f * std::pow(20.0f, juce::jlimit(0.0f, 1.0f, lpfNormalized)),
+        lpf.update(ui::starFilterRange(false).convertFrom0to1(juce::jlimit(0.0f, 1.0f, lpfNormalized)),
                    modules::FilterSlope::Slope12, false);
 }
 

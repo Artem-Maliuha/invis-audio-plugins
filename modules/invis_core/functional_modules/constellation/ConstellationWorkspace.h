@@ -119,8 +119,10 @@ private:
      */
     struct StarPanel : juce::Component {
         explicit StarPanel(ConstellationWorkspace& o);
+        /** `tint` transparent leaves the neutral shell; otherwise the panel wears the star. */
         static void paintPanelShell(juce::Graphics& g, juce::Rectangle<float> bounds,
-                                    const juce::String& heading);
+                                    const juce::String& heading,
+                                    juce::Colour tint = juce::Colours::transparentBlack);
         void showFor(int starIndex);
         void hide() { setVisible(false); }
 

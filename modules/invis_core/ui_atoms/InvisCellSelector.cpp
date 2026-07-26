@@ -62,7 +62,13 @@ void InvisCellSelector::showItemPopup()
         for (size_t i = 0; i < items.size(); ++i)
             menu.addItem(static_cast<int>(i) + 1, items[i], true, static_cast<int>(i) == selectedIndex);
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMinimumWidth(getWidth()),
+    // The chassis's own dropdown, everywhere a dropdown appears. A cell that opened the system
+    // list while the chart's menus wore the panel's look was two different products in one window.
+    if (popupLook != nullptr) menu.setLookAndFeel(popupLook);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+                                                 .withMinimumWidth(getWidth())
+                                                 .withStandardItemHeight(19),
                        [this, structured](int result) {
                            isPressed = false;
 

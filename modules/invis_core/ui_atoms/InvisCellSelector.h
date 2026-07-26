@@ -38,6 +38,9 @@ public:
      * menu carries separate ONLINE and OFFLINE sections). The atom stays generic: it knows how to
      * open a menu and report the chosen id, and nothing about what the ids mean.
      */
+    /** Optional chassis look for the popup. Shared, so one instance serves every cell. */
+    void setPopupLookAndFeel(juce::LookAndFeel* lnf) { popupLook = lnf; }
+
     std::function<void(juce::PopupMenu&)> onBuildPopup;
     std::function<void(int resultId)> onPopupResult;
 
@@ -80,6 +83,7 @@ private:
 
     bool isPressed { false };
     bool popupMode { false };
+    juce::LookAndFeel* popupLook { nullptr };
     juce::String displayOverride;
     juce::Justification valueJustification { juce::Justification::centredLeft };
 
