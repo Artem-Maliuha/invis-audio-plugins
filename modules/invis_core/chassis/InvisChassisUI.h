@@ -4,6 +4,7 @@
 #include "../functional_modules/input_sidebar/InputSidebarUI.h"
 #include "../functional_modules/output_sidebar/OutputSidebarUI.h"
 #include "../functional_modules/top_sidebar/TopSidebarUI.h"
+#include "../functional_modules/midi_learn/MidiLearnModule.h"
 #include "../design_system/InvisLayout.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -71,6 +72,14 @@ public:
     InputSidebarUI& getInput()   { return inputUI; }
     OutputSidebarUI& getOutput() { return outputUI; }
 
+    /**
+     * MIDI Learn for every control the frame owns, wired in one call.
+     *
+     * The chassis knows which parameter each of its knobs drives - the plugin does not, and should
+     * not have to. Handing it the module is the whole of the plugin's part.
+     */
+    void enableMidiLearn(MidiLearnModule& module);
+
     /** Anything the plugin wants advanced on the same clock as the frame. */
     std::function<void(float dt)> onTick;
 
@@ -84,6 +93,7 @@ public:
 
 private:
     void timerCallback() override;
+    void showMidiMenu(juce::Component& anchor, const juce::String& parameterID);
 
     InvisChassisDSP& dspRef;
 
@@ -91,6 +101,8 @@ private:
     InputSidebarUI inputUI;
     OutputSidebarUI outputUI;
 
+    MidiLearnModule* midiLearn { nullptr };
+    ui::InvisPopupLookAndFeel popupLook;
     juce::Component* workspace { nullptr };
     juce::Rectangle<int> workspaceBounds;
 

@@ -683,6 +683,14 @@ void InvisKnob::resized()
 
 void InvisKnob::mouseDown(const juce::MouseEvent& e)
 {
+    // Before anything else: a right-click is never a value change, and treating it as the start of
+    // a drag would move the control you were only asking about.
+    if (e.mods.isPopupMenu())
+    {
+        if (onSecondaryClick) onSecondaryClick();
+        return;
+    }
+
     if (valueTextArea.contains(e.position))
     {
         showInlineEditor();

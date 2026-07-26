@@ -48,6 +48,55 @@ InvisChassisUI::~InvisChassisUI()
     stopTimer();
 }
 
+void InvisChassisUI::enableMidiLearn(MidiLearnModule& module)
+{
+    midiLearn = &module;
+
+    // Each knob names its own parameter, because only the chassis knows which one it drives.
+    const std::pair<ui::InvisKnob*, juce::String> controls[] = {
+        { &inputUI.getTrimKnob(),   juce::String(InvisChassisDSP::kInputPrefix)  + "trim" },
+        { &inputUI.getHpfKnob(),    juce::String(InvisChassisDSP::kInputPrefix)  + "hpf_freq" },
+        { &inputUI.getLpfKnob(),    juce::String(InvisChassisDSP::kInputPrefix)  + "lpf_freq" },
+        { &outputUI.getOutputKnob(),juce::String(InvisChassisDSP::kOutputPrefix) + "gain" },
+    };
+
+    for (const auto& [knob, id] : controls)
+        knob->onSecondaryClick = [this, knob, id]() { showMidiMenu(*knob, id); };
+}
+
+void InvisChassisUI::showMidiMenu(juce::Component& anchor, const juce::String& parameterID)
+{
+    if (midiLearn == nullptr) return;
+
+    const int bound = midiLearn->getCcForParameter(parameterID);
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader(bound >= 0 ? "MIDI CC " + juce::String(bound) : juce::String("MIDI"));
+    menu.addItem(1, midiLearn->isLearning() ? "Cancel learn" : "MIDI learn...");
+    if (bound >= 0) menu.addItem(2, "Forget CC " + juce::String(bound));
+
+    menu.setLookAndFeel(&popupLook);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&anchor)
+                                                 .withMinimumWidth(150)
+                                                 .withStandardItemHeight(19),
+                       [this, parameterID](int result)
+    {
+        if (midiLearn == nullptr) return;
+
+        if (result == 1)
+        {
+            // Arming is a TOGGLE. A learn you cannot call off leaves the next stray controller -
+            // a mod wheel knocked on the way past - bound to something you never meant.
+            if (midiLearn->isLearning()) midiLearn->cancelLearning();
+            else                         midiLearn->startLearning(parameterID);
+        }
+        else if (result == 2)
+        {
+            midiLearn->unbindParameter(parameterID);
+        }
+    });
+}
+
 void InvisChassisUI::setWorkspace(juce::Component& content)
 {
     workspace = &content;

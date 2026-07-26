@@ -174,6 +174,9 @@ public:
 
     // Callbacks for container / DAW automation gestures
     std::function<void(float)> onValueChanged;
+    /** Right-click. The chassis hangs MIDI Learn here; the atom itself stays unaware of MIDI. */
+    std::function<void()> onSecondaryClick;
+
     std::function<void()> onDragStarted;
     std::function<void()> onDragEnded;
 

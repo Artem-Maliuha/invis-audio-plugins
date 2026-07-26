@@ -20,6 +20,9 @@ ConstellationRoyalProcessor::ConstellationRoyalProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // Once, here: the parameter list is fixed the moment the processor exists, which is exactly
+    // what lets the audio callback index it without a lock.
+    midiLearn.prepare(apvts);
 }
 
 void ConstellationRoyalProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -79,6 +82,10 @@ juce::AudioProcessorEditor* ConstellationRoyalProcessor::createEditor()
 void ConstellationRoyalProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
+
+    // Bindings travel with the session, not in a machine-wide file - see MidiLearnModule.
+    state.removeChild(state.getChildWithName(invis::modules::MidiLearnModule::getStateType()), nullptr);
+    state.appendChild(midiLearn.toValueTree(), nullptr);
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
@@ -87,7 +94,11 @@ void ConstellationRoyalProcessor::setStateInformation(const void* data, int size
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
+    {
         apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        midiLearn.restoreFromValueTree(
+            apvts.state.getChildWithName(invis::modules::MidiLearnModule::getStateType()));
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
