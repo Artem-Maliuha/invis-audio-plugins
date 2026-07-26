@@ -85,7 +85,6 @@ struct ConstellationMetrics {
  */
 struct ConstellationNode {
     juce::Point<float> position { 0.5f, 0.5f };
-    float radius { 0.26f };       // spatial reach of the halo, normalized to chart width
 
     /**
      * BIPOLAR contribution, -1..+1.
@@ -277,8 +276,10 @@ public:
     ~InvisConstellation() override = default;
 
     static constexpr int kMaxNodes = 8;
-    static constexpr float kMinRadius = 0.06f;
-    static constexpr float kMaxRadius = 0.72f;
+    // How far a star can be heard from, at the ends of its sensitivity travel. Half sensitivity
+    // lands on the radius every star used to carry, so a resting chart looks as it always did.
+    static constexpr float kMinReach = 0.07f;
+    static constexpr float kMaxReach = 0.46f;
 
     /** New node created by clicking an edge. Reports where it landed in the node order. */
     std::function<void(int index)> onNodeInserted;
@@ -316,7 +317,8 @@ public:
     void randomiseObservers();
 
     void setNodePosition(int index, juce::Point<float> normalized);
-    void setNodeRadius(int index, float normalizedRadius);
+    /** Deprecated spelling of setNodeSensitivity - the radius IS the sensitivity now. */
+    void setNodeRadius(int index, float normalizedRadius) { setNodeSensitivity(index, normalizedRadius); }
 
     /** Identity of a star. The atom stores these but assigns no meaning to them - what a star IS
         belongs to the product, not to the chart. */
@@ -421,23 +423,35 @@ public:
     int countLinks(int starIndex) const;
 
     /**
-     * HOW FAR A STAR REACHES, which is its stored radius scaled by its sensitivity.
+     * HOW FAR A STAR REACHES. This IS its sensitivity - there is no second radius behind it.
      *
-     * The two were separate and only one of them was on screen: the aura was drawn at the raw
-     * radius, so turning a star up made it brighter and never made it REACH further. That reads as
-     * a control that has run out of effect, and it is not what "sensitivity" means on a chart
-     * where distance is the whole instrument - a star you have turned up should be audible from
-     * further away.
+     * There used to be one, and it was never on screen: a star carried a stored radius nobody
+     * could edit, while the control called "sensitivity" only changed how brightly it lit. So the
+     * aura - the one thing that says where you have to stand - answered to a number that was not
+     * a control, and the control answered to nothing you could see.
      *
-     * ONE value for both the picture and the routing: the falloff, the enclosure and the aura all
-     * take their radius from here, so what you see is exactly what the observer walks into.
+     * ONE value, read from here by the falloff, the enclosure and the aura alike, so the picture
+     * is exactly what the observer walks into.
      */
     static float getReach(const ConstellationNode& node)
     {
-        return node.radius * (0.25f + 1.5f * juce::jlimit(0.0f, 1.0f, node.sensitivity));
+        return kMinReach + (kMaxReach - kMinReach) * juce::jlimit(0.0f, 1.0f, node.sensitivity);
     }
 
-    /** 0..1, resting at 0.5. Snaps to the half mark so the resting value is findable by hand. */
+    /**
+     * SENSITIVITY IS DISTANCE. 0..1, resting at half, snapping to it so the rest is findable.
+     *
+     * It used to be a second mixer, which is why it felt like a control that had run out of
+     * effect: turning a star up made it brighter and never made it REACH further, and on a chart
+     * where distance IS the instrument that is the one thing it should have meant. It also
+     * overlapped the block's own DRY/WET, so two knobs argued over the same job.
+     *
+     * The two now sit on different questions:
+     *   SENSITIVITY - how far away the observer can still feed me.
+     *   DRY/WET     - how much of me is heard in whatever passes through me.
+     *
+     * Which leaves brightness free to mean only ENGAGEMENT: how much signal is actually running.
+     */
     void setNodeSensitivity(int index, float amount);
 
     /** The block's own band limiting and mix. See ConstellationNode for the topology. */

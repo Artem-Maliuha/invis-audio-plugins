@@ -617,13 +617,11 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
             arrival = halo[static_cast<size_t>(entryStar)];
         }
 
-        const float entrySens = nodes[static_cast<size_t>(entryStar)].sensitivity;
-
         // SILENT IS NOT SHAPELESS. A figure the observer has walked away from used to be wiped
         // outright, chain order and all - so the chart forgot how it was wired the moment it went
         // quiet, and the routing animation had nothing left to draw. Level and structure are
         // different facts: the levels go to zero, the stages stay.
-        const bool silent = std::abs(arrival * entrySens) <= 0.0005f;
+        const bool silent = arrival <= 0.0005f;
 
         // Walk the CLUSTER TREE breadth-first from the entry. Contracting the cycles guarantees
         // this is a tree, so a figure of any shape - branches, loops, loops with branches - comes
@@ -657,6 +655,12 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
             const auto& cl = fig.clusters[static_cast<size_t>(ci)];
             const bool isEntry = (ci == entryCluster);
             const float feed = isEntry ? arrival : 1.0f;   // hops between stages are 100%
+
+            // BRIGHTNESS IS ENGAGEMENT, so what is running matters, not what a hop is capable of.
+            // A hop is a full send - that is the routing law - but a chain fed by a distant
+            // observer is barely carrying anything, and lighting its downstream stars at full
+            // would say the opposite. The level that got IN travels the whole way.
+            const float running = arrival;
 
             if (cl.parallel)
             {
@@ -700,8 +704,8 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     // than a beam to its neighbour. The share still steers the audio balance -
                     // that is the morph - but it has no business claiming a brighter link.
                     juce::ignoreUnused(count);
-                    c.glow = silent ? 0.0f : feed;
-                    c.direct = isEntry ? c.glow : 0.0f;
+                    c.glow = silent ? 0.0f : running;
+                    c.direct = (isEntry && !silent) ? running : 0.0f;
                 }
             }
             else
@@ -713,9 +717,14 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     auto& c = out[static_cast<size_t>(idx)];
                     c.chainOrder = order;
                     c.isEntry = marksEntry && isEntry;
-                    c.amount = silent ? 0.0f : feed * nodes[static_cast<size_t>(idx)].sensitivity;
-                    c.glow = std::abs(c.amount);
-                    c.direct = isEntry ? c.glow : 0.0f;
+                    // SENSITIVITY IS NOT A MIXER ANY MORE. It decided how far the observer could
+                    // feed this star, and it has already done that - inside `arrival`, through the
+                    // halo. Multiplying by it again here charged for the same thing twice, and
+                    // left a downstream star with no mix control at all. That job belongs to the
+                    // block's own DRY/WET.
+                    c.amount = silent ? 0.0f : feed;
+                    c.glow = silent ? 0.0f : running;
+                    c.direct = (isEntry && !silent) ? running : 0.0f;
                 }
             }
 
@@ -860,7 +869,6 @@ juce::ValueTree InvisConstellation::toValueTree() const
         star.setProperty("colour", static_cast<int>(node.colour.getARGB()), nullptr);
         star.setProperty("x", node.position.x, nullptr);
         star.setProperty("y", node.position.y, nullptr);
-        star.setProperty("radius", node.radius, nullptr);
         star.setProperty("sensitivity", node.sensitivity, nullptr);
         star.setProperty("hpf", node.hpf, nullptr);
         star.setProperty("lpf", node.lpf, nullptr);
@@ -908,7 +916,6 @@ void InvisConstellation::restoreFromValueTree(const juce::ValueTree& tree)
                 static_cast<int>(child.getProperty("colour", 0))));
             node.position = { static_cast<float>(child.getProperty("x", 0.5)),
                               static_cast<float>(child.getProperty("y", 0.5)) };
-            node.radius = static_cast<float>(child.getProperty("radius", 0.26));
             node.sensitivity = static_cast<float>(child.getProperty("sensitivity", 0.5));
             node.hpf = static_cast<float>(child.getProperty("hpf", 0.0));
             node.lpf = static_cast<float>(child.getProperty("lpf", 1.0));
@@ -951,7 +958,6 @@ int InvisConstellation::addNode(const juce::String& label, juce::Colour colour)
 
     ConstellationNode node;
     node.position = { 0.5f + std::cos(angle) * ring, 0.5f + std::sin(angle) * ring };
-    node.radius = 0.26f;
     node.colour = colour;
     node.label = label;
 
@@ -1048,8 +1054,10 @@ void InvisConstellation::randomise()
 
         nodes[static_cast<size_t>(i)].position = { juce::jlimit(0.06f, 0.94f, 0.5f + std::cos(angle) * dist),
                                                    juce::jlimit(0.06f, 0.94f, 0.5f + std::sin(angle) * dist) };
-        nodes[static_cast<size_t>(i)].radius = juce::jlimit(kMinRadius, kMaxRadius,
-                                                            0.18f + rng.nextFloat() * 0.22f);
+        // Reach is the sensitivity now, so shuffling the chart shuffles how far each star
+        // carries. Kept off both ends: a star that reaches nothing, or one that swallows the whole
+        // sky, is a star you would only ever have to fix by hand afterwards.
+        nodes[static_cast<size_t>(i)].sensitivity = 0.22f + rng.nextFloat() * 0.56f;
     }
 
     // AND HOW THEY ARE JOINED. Shuffling only the positions rearranged the same figure over and
@@ -1109,15 +1117,6 @@ void InvisConstellation::setNodePosition(int index, juce::Point<float> n)
     repaint();
 }
 
-void InvisConstellation::setNodeRadius(int index, float r)
-{
-    if (index < 0 || index >= static_cast<int>(nodes.size())) return;
-
-    nodes[static_cast<size_t>(index)].radius = juce::jlimit(kMinRadius, kMaxRadius, r);
-    if (onGeometryChanged) onGeometryChanged();
-    notifyWeights();
-    repaint();
-}
 
 void InvisConstellation::setNodeSensitivity(int index, float amount)
 {
@@ -1201,7 +1200,8 @@ void InvisConstellation::insertNodeOnLink(int linkIndex, juce::Point<float> norm
 
     ConstellationNode node;
     node.position = normalized;
-    node.radius = (nodes[static_cast<size_t>(a)].radius + nodes[static_cast<size_t>(b)].radius) * 0.5f;
+    node.sensitivity = (nodes[static_cast<size_t>(a)].sensitivity
+                        + nodes[static_cast<size_t>(b)].sensitivity) * 0.5f;
     node.colour = nodes[static_cast<size_t>(a)].colour
                     .interpolatedWith(nodes[static_cast<size_t>(b)].colour, 0.5f);
     node.label = "NEW";
