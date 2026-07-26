@@ -196,6 +196,7 @@ struct ChartFrame {
     std::array<std::vector<StarContribution>, 2> heard;   // one row per observer
     std::vector<ConstellationFigure> figures;
     std::vector<ConstellationCluster> parallel;           // the closed clusters, flattened
+    std::vector<int> stages;                              // stages in each star's figure, per star
 };
 
 /**
@@ -443,6 +444,26 @@ private:
 
     /** The whole frame's view of the chart, so nothing below re-derives the routing. */
     ChartFrame takeSnapshot() const;
+
+    /**
+     * THE PULSE - where the sound is, right now.
+     *
+     * ONE HOP TAKES ONE FIXED TIME, whatever the line's length. Speed proportional to distance is
+     * what a moving dash gives you for free, and it lies: it makes a star you dragged further away
+     * look like it takes longer to reach, when nothing about the routing changed. Constant time
+     * per hop says the true thing - a stage is a stage.
+     *
+     * Serial figures therefore light up one stage after another; a closed cluster is ONE stage, so
+     * everything inside it lights at once.
+     */
+    static constexpr float kHopSeconds  = 0.62f;   // per link, regardless of how long it is drawn
+    static constexpr float kFlashDecay  = 0.20f;   // how long a star keeps ringing after arrival
+
+    /** Progress 0..1 of the pulse currently travelling INTO `order`, or -1 when it is elsewhere. */
+    float pulseOnSegment(int stages, int order) const;
+
+    /** 0..1 afterglow of a stage that has just been struck. */
+    float stageFlash(int stages, int order) const;
     void paintGhostNode(juce::Graphics& g);
     void paintObserver(juce::Graphics& g, int observerIndex);
 
@@ -465,6 +486,10 @@ private:
     juce::Point<float> grabStartPos;
 
     float flowPhase { 0.0f };
+
+    // Double, and wrapped only once a day: the pulse is read through fmod against each figure's
+    // own cycle length, so a wrap that is not a multiple of that cycle makes every figure skip.
+    double pulseClock { 0.0 };
     juce::Random rng;
 
     // Ghost insertion preview, and the break handle on a hovered link

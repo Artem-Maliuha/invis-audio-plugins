@@ -178,6 +178,22 @@ StarLight mixStarLight(const std::vector<juce::Colour>& colours,
     return out;
 }
 
+/** The travelling charge itself: a bright core in a soft bloom, drawn at one point on a line. */
+void drawSpark(juce::Graphics& g, juce::Point<float> at, juce::Colour tint, float size, float alpha)
+{
+    const float bloom = size * 3.2f;
+
+    g.setGradientFill(juce::ColourGradient(tint.withAlpha(0.55f * alpha), at.x, at.y,
+                                           juce::Colours::transparentBlack, at.x + bloom, at.y, true));
+    g.fillEllipse(at.x - bloom, at.y - bloom, bloom * 2.0f, bloom * 2.0f);
+
+    g.setColour(tint.brighter(0.6f).withAlpha(0.85f * alpha));
+    g.fillEllipse(at.x - size, at.y - size, size * 2.0f, size * 2.0f);
+
+    g.setColour(juce::Colours::white.withAlpha(0.9f * alpha));
+    g.fillEllipse(at.x - size * 0.45f, at.y - size * 0.45f, size * 0.9f, size * 0.9f);
+}
+
 } // namespace
 
 std::vector<ConstellationFigure> InvisConstellation::buildFigures(size_t numNodes,
@@ -761,6 +777,21 @@ ChartFrame InvisConstellation::takeSnapshot() const
         for (const auto& cl : fig.clusters)
             if (cl.parallel) frame.parallel.push_back(cl);
 
+    // How many stages each star's figure has, so the pulse knows how long its round trip is.
+    frame.stages.assign(nodes.size(), 0);
+
+    for (const auto& fig : frame.figures)
+    {
+        int last = -1;
+        for (int idx : fig.stars)
+            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
+                last = std::max(last, frame.heard[0][static_cast<size_t>(idx)].chainOrder);
+
+        for (int idx : fig.stars)
+            if (idx >= 0 && idx < static_cast<int>(nodes.size()))
+                frame.stages[static_cast<size_t>(idx)] = last + 1;
+    }
+
     return frame;
 }
 
@@ -1009,7 +1040,39 @@ void InvisConstellation::tickAnimation(float dt)
 
     flowPhase += dt;
     if (flowPhase > 1000.0f) flowPhase -= 1000.0f;
+
+    pulseClock += static_cast<double>(dt);
+    if (pulseClock > 86400.0) pulseClock -= 86400.0;
+
     repaint();
+}
+
+float InvisConstellation::pulseOnSegment(int stages, int order) const
+{
+    if (stages <= 0 || order < 0 || order >= stages) return -1.0f;
+
+    const double cycle = static_cast<double>(stages) * kHopSeconds;
+    const double local = std::fmod(pulseClock, cycle);
+    const int segment = static_cast<int>(local / kHopSeconds);
+
+    if (segment != order) return -1.0f;
+
+    return static_cast<float>((local - segment * kHopSeconds) / kHopSeconds);
+}
+
+float InvisConstellation::stageFlash(int stages, int order) const
+{
+    if (stages <= 0 || order < 0 || order >= stages) return 0.0f;
+
+    // A stage is struck at the END of the segment that feeds it: segment 0 carries the signal from
+    // the observer, so stage 0 lights one hop in.
+    const double cycle = static_cast<double>(stages) * kHopSeconds;
+    const double local = std::fmod(pulseClock, cycle);
+
+    double age = local - (order + 1) * static_cast<double>(kHopSeconds);
+    while (age < 0.0) age += cycle;
+
+    return static_cast<float>(std::exp(-age / kFlashDecay));
 }
 
 void InvisConstellation::resized()
@@ -1779,8 +1842,22 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
             const auto ta = nodes[static_cast<size_t>(l.a)].colour.interpolatedWith(blend, 0.34f);
             const auto tb = nodes[static_cast<size_t>(l.b)].colour.interpolatedWith(blend, 0.34f);
 
-            const float soft = (hovered ? 0.16f : 0.09f) + 0.10f * activity;
-            const float core = (hovered ? 0.62f : 0.34f) + 0.26f * activity;
+            // A CLOSED CLUSTER IS ONE STAGE, so it does not pass a charge from star to star -
+            // it all happens at once. The whole cage brightens on the beat instead, which is the
+            // only honest picture of parallel: there is no order inside to depict.
+            int stages = 0, order = -1;
+            for (int idx : owner->stars)
+                if (idx >= 0 && idx < static_cast<int>(nodes.size()))
+                {
+                    stages = frame.stages[static_cast<size_t>(idx)];
+                    order = contribs[static_cast<size_t>(idx)].chainOrder;
+                    break;
+                }
+
+            const float beat = (activity > 0.004f) ? stageFlash(stages, order) : 0.0f;
+
+            const float soft = (hovered ? 0.16f : 0.09f) + 0.10f * activity + 0.16f * beat;
+            const float core = (hovered ? 0.62f : 0.34f) + 0.26f * activity + 0.40f * beat;
 
             juce::Path run;
             run.startNewSubPath(pa);
@@ -1809,25 +1886,17 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
             g.setColour(colour.withAlpha(0.55f * energy));
             g.drawLine(pa.x, pa.y, pb.x, pb.y, m.polygonStroke * 1.8f);
 
-            // Charge crawling downstream, so the DIRECTION of travel is never ambiguous
+            // ONE CHARGE, CROSSING ONCE. A dashed pattern crawling along the line said "flow"
+            // but never said WHERE the sound is, and its speed was set by the line's length -
+            // drag a star further away and the same hop appeared to take longer.
             const auto from = (downstream == l.b) ? pa : pb;
             const auto to = (downstream == l.b) ? pb : pa;
-            const float len = from.getDistanceFrom(to);
 
-            if (len > 6.0f)
-            {
-                const auto dir = (to - from) / len;
-                const float offset = std::fmod(flowPhase * 40.0f, 16.0f);
-                const float dash[] = { 3.0f, 13.0f };
+            const int stages = frame.stages[static_cast<size_t>(downstream)];
+            const int order = contribs[static_cast<size_t>(downstream)].chainOrder;
 
-                juce::Path flow, dashed;
-                flow.startNewSubPath(from + dir * offset);
-                flow.lineTo(to);
-                juce::PathStrokeType(1.0f).createDashedStroke(dashed, flow, dash, 2);
-
-                g.setColour(juce::Colours::white.withAlpha(0.5f * energy));
-                g.strokePath(dashed, juce::PathStrokeType(1.4f));
-            }
+            if (const float t = pulseOnSegment(stages, order); t >= 0.0f)
+                drawSpark(g, from + (to - from) * t, colour, 2.6f, energy);
         }
     }
 
@@ -1940,24 +2009,12 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
         g.setColour(node.colour.withAlpha(0.30f + 0.55f * w));
         g.strokePath(beam, juce::PathStrokeType(1.0f + 3.0f * w));
 
-        if (w > 0.06f)
-        {
-            const float len = from.getDistanceFrom(to);
-            if (len > 4.0f)
-            {
-                const auto dir = (to - from) / len;
-                const float offset = std::fmod(flowPhase * 46.0f, 14.0f);
-                const float dash[] = { 3.0f, 11.0f };
+        // Segment 0 is the sound LEAVING the listener for the first stage, so the charge travels
+        // from the observer toward the star - `from` is the star here, `to` the observer.
+        const int stages = frame.stages[static_cast<size_t>(index)];
 
-                juce::Path flow, dashed;
-                flow.startNewSubPath(from + dir * offset);
-                flow.lineTo(to);
-                juce::PathStrokeType(1.0f).createDashedStroke(dashed, flow, dash, 2);
-
-                g.setColour(juce::Colours::white.withAlpha(std::min(0.75f, 0.85f * w)));
-                g.strokePath(dashed, juce::PathStrokeType(1.0f + 1.6f * w));
-            }
-        }
+        if (const float t = pulseOnSegment(stages, 0); t >= 0.0f)
+            drawSpark(g, to + (from - to) * t, node.colour, 2.4f + 1.6f * w, w);
 
         const float impact = 4.0f + 16.0f * w;
         g.setGradientFill(juce::ColourGradient(node.colour.withAlpha(0.42f * w), to.x, to.y,
@@ -2021,6 +2078,13 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
         g.drawEllipse(centre.x - gate, centre.y - gate, gate * 2.0f, gate * 2.0f, 1.6f);
     }
 
+    // ARRIVAL. The star rings when the charge lands on it - sequentially down a chain, all at once
+    // inside a closed cluster, because a cluster is one stage and its members share an order.
+    const auto& own = frame.heard[0][static_cast<size_t>(index)];
+    const float beat = (own.glow > 0.004f)
+                     ? stageFlash(frame.stages[static_cast<size_t>(index)], own.chainOrder)
+                     : 0.0f;
+
     // Negative polarity stays unlit here too, so a star reads the same way as its aura does.
     const float lit = (node.sensitivity < 0.0f) ? 0.0f : peak;
     const float rNode = m.nodeRadius;
@@ -2072,9 +2136,24 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
 
     // The lit edge of the glass. This is the whole star when sensitivity is zero, so it can never
     // fade out entirely - an invisible star is one you cannot pick up again.
-    g.setColour(node.colour.withAlpha(0.45f + 0.45f * lit + (hovered ? 0.15f : 0.0f)));
+    g.setColour(node.colour.withAlpha(std::min(1.0f, 0.45f + 0.45f * lit + 0.45f * beat
+                                                     + (hovered ? 0.15f : 0.0f))));
     g.drawEllipse(centre.x - rNode, centre.y - rNode, rNode * 2.0f, rNode * 2.0f,
-                  hovered ? 1.8f : 1.3f);
+                  hovered ? 1.8f : 1.3f + 1.4f * beat);
+
+    // The ring the strike throws off, so the beat carries across the chart at a glance.
+    if (beat > 0.01f)
+    {
+        const float ring = rNode * (1.0f + 0.85f * (1.0f - beat));
+        g.setColour(node.colour.withAlpha(0.55f * beat));
+        g.drawEllipse(centre.x - ring, centre.y - ring, ring * 2.0f, ring * 2.0f, 1.6f * beat);
+
+        const float halo = rNode * 2.6f;
+        g.setGradientFill(juce::ColourGradient(node.colour.withAlpha(0.30f * beat), centre.x, centre.y,
+                                               juce::Colours::transparentBlack,
+                                               centre.x + halo, centre.y, true));
+        g.fillEllipse(centre.x - halo, centre.y - halo, halo * 2.0f, halo * 2.0f);
+    }
 
     // A single specular arc across the top keeps it reading as glass rather than as a flat hole.
     juce::Path sheen;

@@ -15,17 +15,14 @@ class InvisDemoPluginEditor : public juce::AudioProcessorEditor, private juce::T
 public:
     // FIXED DESIGN RESOLUTION. The entire editor is authored once at this size in design pixels;
     // resizing is a pure zoom applied to a single root canvas. No percentage layout anywhere.
-    static constexpr int kDesignWidth  = 1340; // the morph pad is the instrument; it gets the room
-    static constexpr int kDesignHeight = 880; // taller meter + AUTO row + top bar + slope cells + morph pad
+    // STRIPPED TO THE FRAME. The bench carries the universal chassis - top, input and output
+    // sidebars - and the one thing under construction. Demo knobs, the filter panel and the
+    // theme/colour button rows are gone: they were exercising atoms that have since grown their
+    // own homes, and they were the only reason this canvas had to be so large.
+    static constexpr int kDesignWidth  = 1100;
+    static constexpr int kDesignHeight = 740;
 
     static constexpr int kOuterMargin  = 12;
-    static constexpr int kHeaderHeight = 46;
-    static constexpr int kFooterHeight = 108;
-
-    static constexpr int   kFooterLabelHeight  = 16;
-    static constexpr int   kFooterButtonHeight = 26;
-    static constexpr float kHeaderFontSize     = 22.0f;
-    static constexpr float kFooterFontSize     = 10.0f;
 
     explicit InvisDemoPluginEditor(InvisDemoPluginProcessor& p);
     ~InvisDemoPluginEditor() override;
@@ -51,11 +48,10 @@ private:
 
     InvisDemoPluginProcessor& processorRef;
 
-    // Test Bench Controls & Modules
+    // The universal chassis frame
     invis::modules::TopSidebarUI topSidebarUI;
     invis::modules::InputSidebarUI inputSidebarUI;
     invis::modules::OutputSidebarUI outputSidebarUI;
-    invis::modules::InputFilterUI inputFilterUI;
 
     invis::ui::InvisConstellation constellation;
     invis::ui::InvisButton addNodeButton;
@@ -84,39 +80,18 @@ private:
         invis::ui::InvisSeparator divider;
     };
 
+    // ALWAYS PRESENT, top right of the workspace. It used to float over the chart and appear only
+    // on a click, which put the editing controls on top of the thing being edited and made the
+    // chart jump about under the cursor. A prepared panel outside the field just fills in.
     StarPanel starPanel { *this };
-    static constexpr int kStarPanelWidth  = 190;
-    static constexpr int kStarPanelHeight = 214;
+    static constexpr int kStarPanelWidth  = 200;
+    static constexpr int kStarPanelHeight = 236;
 
     // Effect slots the pad hands out as nodes are added. Placeholder identities for now - the
     // real effects arrive one at a time.
     int nextEffectSlot { 0 };
 
-    invis::ui::InvisKnob xsDemoKnob;
-    invis::ui::InvisKnob trimKnob;
-    invis::ui::InvisKnob outputKnob;
-
-    juce::Slider hiddenTrimSlider;
-    juce::Slider hiddenOutputSlider;
-
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> trimAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment;
-
-    std::vector<invis::ui::LEDColorPreset> colorPresets {
-        invis::ui::LEDColorPreset::NeonCyan,
-        invis::ui::LEDColorPreset::WarmAmber,
-        invis::ui::LEDColorPreset::ElectricViolet,
-        invis::ui::LEDColorPreset::EmeraldPhosphor,
-        invis::ui::LEDColorPreset::CrimsonRuby,
-        invis::ui::LEDColorPreset::IceWhite,
-        invis::ui::LEDColorPreset::CobaltBlue
-    };
-    juce::OwnedArray<juce::TextButton> colorButtons;
-
     PanelTheme currentPanelTheme { PanelTheme::DarkSlateCharcoal };
-    juce::OwnedArray<juce::TextButton> panelThemeButtons;
-
-    void updateAllLedPresets(invis::ui::LEDColorPreset preset);
 
     juce::Image chassisBgImage;
     juce::Image knobCapImage;

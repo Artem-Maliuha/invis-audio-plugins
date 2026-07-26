@@ -25,7 +25,6 @@ constexpr int kNumEffects = static_cast<int>(sizeof(kEffectCatalogue) / sizeof(k
 
 InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
 {
-    setVisible(false);
 
     std::vector<juce::String> names;
     for (const auto& e : kEffectCatalogue) names.push_back(e.name);
@@ -76,18 +75,27 @@ InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
 void InvisDemoPluginEditor::StarPanel::showFor(int starIndex)
 {
     index = starIndex;
-    if (index < 0) { hide(); return; }
 
-    const auto& node = owner.constellation.getNode(index);
+    // The panel itself never goes away - only its contents do. Somewhere permanent for the
+    // controls to live is the whole point; a panel that vanished took the layout with it.
+    const bool has = (index >= 0);
 
-    for (int i = 0; i < kNumEffects; ++i)
-        if (node.label == kEffectCatalogue[i].name)
-            effectCell.setSelectedIndex(i, juce::dontSendNotification);
+    effectCell.setVisible(has);
+    sensitivityKnob.setVisible(has);
+    divider.setVisible(has);
+    for (auto* b : swatches) b->setVisible(has);
 
-    sensitivityKnob.setValue((node.sensitivity + 1.0f) * 0.5f, juce::dontSendNotification);
+    if (has)
+    {
+        const auto& node = owner.constellation.getNode(index);
 
-    setVisible(true);
-    toFront(false);
+        for (int i = 0; i < kNumEffects; ++i)
+            if (node.label == kEffectCatalogue[i].name)
+                effectCell.setSelectedIndex(i, juce::dontSendNotification);
+
+        sensitivityKnob.setValue((node.sensitivity + 1.0f) * 0.5f, juce::dontSendNotification);
+    }
+
     repaint();
 }
 
@@ -112,14 +120,21 @@ void InvisDemoPluginEditor::StarPanel::paint(juce::Graphics& g)
         g.setFont(invis::ui::InvisFonts::getDisplayFont(12.0f));
         g.drawText("STAR " + juce::String(index + 1), area.removeFromTop(14.0f),
                    juce::Justification::centredLeft, false);
-    }
 
-    // The hint has to be here: right-drag is fast once you know it, and undiscoverable until then.
-    g.setColour(theme.textSecondary.withAlpha(0.45f));
-    g.setFont(invis::ui::InvisFonts::getDisplayFont(8.5f, false));
-    g.drawText("OR ALT / RIGHT-DRAG ON THE STAR",
-               bounds.removeFromBottom(24.0f).reduced(10.0f, 0.0f),
-               juce::Justification::centred, false);
+        // The hint has to be here: right-drag is fast once you know it, and undiscoverable
+        // until then.
+        g.setColour(theme.textSecondary.withAlpha(0.45f));
+        g.setFont(invis::ui::InvisFonts::getDisplayFont(8.5f, false));
+        g.drawText("OR ALT / RIGHT-DRAG ON THE STAR",
+                   bounds.removeFromBottom(24.0f).reduced(10.0f, 0.0f),
+                   juce::Justification::centred, false);
+    }
+    else
+    {
+        g.setColour(theme.textSecondary.withAlpha(0.40f));
+        g.setFont(invis::ui::InvisFonts::getDisplayFont(10.0f, false));
+        g.drawText("CLICK A STAR", bounds, juce::Justification::centred, false);
+    }
 }
 
 void InvisDemoPluginEditor::StarPanel::resized()
@@ -146,7 +161,10 @@ void InvisDemoPluginEditor::StarPanel::resized()
 // ==============================================================================================
 
 InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
-    : AudioProcessorEditor(&p), processorRef(p), topSidebarUI(p.apvts, "top_", "os_"), inputSidebarUI(p.apvts, "in_side_"), outputSidebarUI(p.apvts, "out_side_"), inputFilterUI(p.apvts, "in_filter_")
+    : AudioProcessorEditor(&p), processorRef(p),
+      topSidebarUI(p.apvts, "top_", "os_"),
+      inputSidebarUI(p.apvts, "in_side_"),
+      outputSidebarUI(p.apvts, "out_side_")
 {
     // Mandatory Requirement 1: Resizable UI, fixed aspect, pure global zoom.
     // Everything below is laid out inside `canvas` in design pixels; `resized()` only scales it.
@@ -154,8 +172,11 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     // atom's intrinsic size, so it must not run before the atoms have been given their presets.
     addAndMakeVisible(canvas);
 
-    // Setup Reusable Input & Output Sidebars
+    // THE CHASSIS FRAME. The left and right sidebars were laid out but never added as children,
+    // so the whole channel strip was being positioned into thin air and never drawn.
     canvas.addAndMakeVisible(topSidebarUI);
+    canvas.addAndMakeVisible(inputSidebarUI);
+    canvas.addAndMakeVisible(outputSidebarUI);
 
     // A catalogue with real depth, so the tree is exercised rather than assumed. Storage is not
     // implemented - selecting a preset only reports the path.
@@ -192,14 +213,6 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
         }),
     }));
 
-    // 1. Setup APVTS Attachments
-    trimAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.apvts, "tb_trim", hiddenTrimSlider
-    );
-    outputAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.apvts, "tb_output", hiddenOutputSlider
-    );
-
     // MORPH PAD: the polygon effect editor.
     constellation.setPadSize(invis::ui::InvisConstellationSize::L);
     constellation.onWeightsChanged = [this](int observerIndex, const std::vector<float>& w) {
@@ -228,7 +241,13 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     canvas.addAndMakeVisible(randomiseButton);
 
     constellation.onNodeClicked = [this](int index) { starPanel.showFor(index); };
-    canvas.addChildComponent(starPanel);
+    canvas.addAndMakeVisible(starPanel);
+    starPanel.showFor(-1);   // prepared and empty until a star is picked
+
+    // Randomising rebuilds the chart, so whatever the inspector was holding is gone with it.
+    constellation.onGeometryChanged = [this]() {
+        if (starPanel.index >= constellation.getNumNodes()) starPanel.showFor(-1);
+    };
 
     channelModeCell.setLabel({});
     channelModeCell.setPopupMode(true);
@@ -238,123 +257,6 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
         constellation.setChannelMode(static_cast<invis::ui::ConstellationChannelMode>(index));
     };
     canvas.addAndMakeVisible(channelModeCell);
-
-    // 1. Setup XS Demo Knob (XS Size Preset - Extra Small Sub-control)
-    xsDemoKnob.setKnobSize(invis::ui::InvisKnobSize::XS);
-    xsDemoKnob.setLabel("DRY/WET");
-    xsDemoKnob.setValue(0.75f);
-    xsDemoKnob.setScaleTicks({
-        { 0.0f, "0%" },
-        { 0.5f, "50%" },
-        { 1.0f, "100%" }
-    });
-    xsDemoKnob.setValueFormatter([](float val) -> juce::String {
-        return juce::String::formatted("%.0f%%", val * 100.0f);
-    });
-    canvas.addAndMakeVisible(xsDemoKnob);
-
-    // 2. Setup TRIM Knob (M Size Preset - Medium Standard)
-    trimKnob.setKnobSize(invis::ui::InvisKnobSize::M);
-    trimKnob.setLabel("TRIM");
-    trimKnob.setValueArcOrigin(invis::ui::ValueArcOrigin::Center);
-    trimKnob.setDefaultValue(0.5f);
-    trimKnob.setScaleTicks({
-        { 0.0f, "-24" },
-        { 0.25f, "-12" },
-        { 0.5f, "0" },
-        { 0.75f, "+12" },
-        { 1.0f, "+24" }
-    });
-    trimKnob.setStickyPositions({ 0.5f }); // Sticky detent at 0 dB
-    trimKnob.setValueFormatter([this](float val) -> juce::String {
-        const float db = static_cast<float>(hiddenTrimSlider.getValue());
-        return juce::String::formatted("%+.1f dB", db);
-    });
-    trimKnob.onValueChanged = [this](float val) {
-        hiddenTrimSlider.setValue(hiddenTrimSlider.proportionOfLengthToValue(val), juce::sendNotificationSync);
-    };
-
-    // 4. Setup OUTPUT GAIN Knob (XL Size Preset - Extra Large Master Focal Control)
-    outputKnob.setKnobSize(invis::ui::InvisKnobSize::XL);
-    outputKnob.setLabel("OUTPUT");
-    const float zeroDbPos = static_cast<float>(hiddenOutputSlider.valueToProportionOfLength(0.0));
-    outputKnob.setValueArcOriginPosition(zeroDbPos); // Fills bi-directionally from 0 dB Unity Gain!
-    outputKnob.setDefaultValue(zeroDbPos);
-    outputKnob.setScaleTicks({
-        { 0.0f, "-48" },
-        { static_cast<float>(hiddenOutputSlider.valueToProportionOfLength(-24.0)), "-24" },
-        { static_cast<float>(hiddenOutputSlider.valueToProportionOfLength(0.0)), "0" },
-        { 1.0f, "+12" }
-    });
-    outputKnob.setStickyPositions({ static_cast<float>(hiddenOutputSlider.valueToProportionOfLength(0.0)) });
-    outputKnob.setValueFormatter([this](float val) -> juce::String {
-        const float db = static_cast<float>(hiddenOutputSlider.getValue());
-        return juce::String::formatted("%+.1f dB", db);
-    });
-    outputKnob.onValueChanged = [this](float val) {
-        hiddenOutputSlider.setValue(hiddenOutputSlider.proportionOfLengthToValue(val), juce::sendNotificationSync);
-    };
-
-    canvas.addAndMakeVisible(trimKnob);
-    canvas.addAndMakeVisible(outputKnob);
-
-    // PARAMETER -> KNOB for the bench's own dials. The sidebars grew this path already; these
-    // did not, which is why A/B/C recall changed the sound while these knobs sat frozen.
-    // Host automation had exactly the same problem.
-    hiddenTrimSlider.onValueChange = [this]() {
-        trimKnob.setValue(static_cast<float>(
-            hiddenTrimSlider.valueToProportionOfLength(hiddenTrimSlider.getValue())),
-            juce::dontSendNotification);
-    };
-
-    hiddenOutputSlider.onValueChange = [this]() {
-        outputKnob.setValue(static_cast<float>(
-            hiddenOutputSlider.valueToProportionOfLength(hiddenOutputSlider.getValue())),
-            juce::dontSendNotification);
-    };
-
-    // Sync initial knob positions with APVTS
-    hiddenTrimSlider.onValueChange();
-    hiddenOutputSlider.onValueChange();
-
-    // Build interactive LED color preset selector bar
-    for (auto preset : colorPresets)
-    {
-        auto* btn = colorButtons.add(new juce::TextButton(invis::ui::getPresetName(preset)));
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(16, 20, 26));
-        btn->setColour(juce::TextButton::textColourOffId, invis::ui::getPresetColor(preset));
-
-        btn->onClick = [this, preset]() {
-            updateAllLedPresets(preset);
-        };
-        canvas.addAndMakeVisible(btn);
-    }
-
-    // Build interactive Chassis Panel Theme selector bar
-    struct ThemeItem { PanelTheme theme; const char* name; juce::Colour color; };
-    static const ThemeItem kPanelThemes[] = {
-        { PanelTheme::DarkSlateCharcoal, "Charcoal Slate", juce::Colour::fromRGB(24, 30, 40) },
-        { PanelTheme::ObsidianBlack, "Obsidian Black", juce::Colour::fromRGB(14, 16, 20) },
-        { PanelTheme::MidnightIndigo, "Midnight Blue", juce::Colour::fromRGB(18, 36, 68) },
-        { PanelTheme::CyberViolet, "Cyber Violet", juce::Colour::fromRGB(44, 26, 68) },
-        { PanelTheme::GunmetalSteel, "Gunmetal Steel", juce::Colour::fromRGB(36, 42, 52) }
-    };
-
-    for (const auto& item : kPanelThemes)
-    {
-        auto* btn = panelThemeButtons.add(new juce::TextButton(item.name));
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(16, 20, 26));
-        btn->setColour(juce::TextButton::textColourOffId, item.color.brighter(0.4f));
-
-        const auto themeEnum = item.theme;
-        btn->onClick = [this, themeEnum]() {
-            currentPanelTheme = themeEnum;
-            repaint();
-        };
-        canvas.addAndMakeVisible(btn);
-    }
 
     // LAST: every child now exists and carries its final size preset, so the first layout pass
     // can read correct intrinsic sizes.
@@ -394,16 +296,6 @@ void InvisDemoPluginEditor::timerCallback()
     topSidebarUI.tickAnimations(dt);
 }
 
-void InvisDemoPluginEditor::updateAllLedPresets(invis::ui::LEDColorPreset preset)
-{
-    const auto color = invis::ui::getPresetColor(preset);
-    inputSidebarUI.setLedPreset(preset);
-    outputSidebarUI.setLedPreset(preset);
-    inputFilterUI.setLedPreset(preset);
-    trimKnob.setPointerLedColor(color);
-    outputKnob.setPointerLedColor(color);
-}
-
 void InvisDemoPluginEditor::paint(juce::Graphics& g)
 {
     // The editor itself only fills the letterbox area; all artwork lives on the scaled canvas.
@@ -412,7 +304,6 @@ void InvisDemoPluginEditor::paint(juce::Graphics& g)
 
 void InvisDemoPluginEditor::paintCanvas(juce::Graphics& g)
 {
-    const auto theme = invis::ui::InvisTheme::getGlobalDefault();
     const auto bounds = canvas.getLocalBounds().toFloat();
 
     // 1. Render Procedural Premium Studio Panel Background Based on currentPanelTheme
@@ -478,42 +369,6 @@ void InvisDemoPluginEditor::paintCanvas(juce::Graphics& g)
     g.setGradientFill(vignetteGrad);
     g.fillAll();
 
-    // Header & Footer areas, in design pixels (identical maths to layoutCanvas()).
-    const int sidebarWidth = invis::modules::InputSidebarUI::getIntrinsicWidth();
-
-    auto mainArea = bounds.reduced(static_cast<float>(kOuterMargin));
-    mainArea.removeFromTop(static_cast<float>(invis::modules::TopSidebarUI::getIntrinsicHeight()
-                                              + invis::ui::layout::kGapM));
-    mainArea.removeFromLeft(static_cast<float>(sidebarWidth + invis::ui::layout::kGapM));
-    mainArea.removeFromRight(static_cast<float>(sidebarWidth + invis::ui::layout::kGapM));
-
-    const auto headerRect = mainArea.removeFromTop(static_cast<float>(kHeaderHeight));
-
-    // Engraved Metal Title Frame
-    const auto accent = theme.accentPrimary;
-    g.setFont(juce::FontOptions("Courier New", kHeaderFontSize, juce::Font::bold));
-
-    g.setColour(juce::Colours::black.withAlpha(0.45f));
-    g.drawText("INVIS AUDIO TEST BENCH", headerRect.translated(0.0f, 1.0f), juce::Justification::centred, true);
-
-    // Double Phosphor Glow Title
-    g.setColour(accent.withAlpha(0.35f));
-    g.drawText("INVIS AUDIO TEST BENCH", headerRect.translated(-0.5f, -0.5f), juce::Justification::centred, true);
-    g.setColour(accent.brighter(0.2f));
-    g.drawText("INVIS AUDIO TEST BENCH", headerRect, juce::Justification::centred, true);
-
-    // Bottom Controls Bar Titles
-    auto footerRect = mainArea.removeFromBottom(static_cast<float>(kFooterHeight));
-
-    g.setColour(theme.textSecondary.withAlpha(0.65f));
-    g.setFont(juce::FontOptions(kFooterFontSize, juce::Font::plain));
-
-    g.drawText("CHASSIS THEME:", footerRect.removeFromTop(static_cast<float>(kFooterLabelHeight)),
-               juce::Justification::centred, true);
-    footerRect.removeFromTop(static_cast<float>(kFooterButtonHeight + invis::ui::layout::kGapM));
-
-    g.drawText("LED ACCENT PRESET:", footerRect.removeFromTop(static_cast<float>(kFooterLabelHeight)),
-               juce::Justification::centred, true);
 }
 
 void InvisDemoPluginEditor::resized()
@@ -529,7 +384,7 @@ void InvisDemoPluginEditor::layoutCanvas()
 
     auto area = canvas.getLocalBounds().reduced(kOuterMargin);
 
-    // 1. TOP SIDEBAR: spans the FULL width above the channel strips. Everything it carries is
+    // 1. TOP SIDEBAR spans the FULL width above the channel strips. Everything it carries is
     //    plugin-global rather than signal-path, so it outranks the left/right sidebars.
     topSidebarUI.setBounds(area.removeFromTop(TopSidebarUI::getIntrinsicHeight()));
     area.removeFromTop(layout::kGapM);
@@ -544,90 +399,31 @@ void InvisDemoPluginEditor::layoutCanvas()
 
     jassert(area.getHeight() >= InputSidebarUI::getMinimumHeight());
 
-    // 2. CENTER WORKSPACE between header and footer
-    area.removeFromTop(kHeaderHeight);
-    auto footerArea = area.removeFromBottom(kFooterHeight);
+    // 3. WORKSPACE: the inspector takes a fixed column on the right, OUTSIDE the star field, and
+    //    the chart centres itself in what is left. A panel that overlapped the chart put the
+    //    editing controls on top of the thing being edited.
+    auto inspectorColumn = area.removeFromRight(kStarPanelWidth);
+    area.removeFromRight(layout::kGapGroup);
 
-    // 3. Workspace row: filter panel + 4 knobs, each at its intrinsic size, leftover split as
-    //    equal gaps. Nothing here is a fraction of the parent.
-    const auto filterSize = InputFilterUI::getIntrinsicSize();
+    starPanel.setBounds(inspectorColumn.removeFromTop(kStarPanelHeight));
 
-    const std::array<juce::Point<int>, 3> knobSizes {
-        InvisKnob::getIntrinsicSize(InvisKnobSize::XS),
-        InvisKnob::getIntrinsicSize(InvisKnobSize::M),
-        InvisKnob::getIntrinsicSize(InvisKnobSize::XL)
-    };
+    // The chart, with its keys directly above it - the keys belong to the chart, so they are
+    // bonded to it rather than floating in the row.
+    const auto padSize = constellation.getIntrinsicSize();
+    const auto btnSize = addNodeButton.getIntrinsicSize();
 
-    int contentWidth = filterSize.x;
-    for (const auto& s : knobSizes) contentWidth += s.x;
+    auto stack = area.withSizeKeepingCentre(padSize.x,
+                                            btnSize.y + layout::kGapBonded + padSize.y);
 
-    const int numGaps = 1 + static_cast<int>(knobSizes.size()); // between panel and each knob
-    const int gap = std::max(layout::kGapS, (area.getWidth() - contentWidth) / numGaps);
+    auto keyRow = stack.removeFromTop(btnSize.y);
+    channelModeCell.setBounds(keyRow.removeFromRight(kChannelCellWidth)
+                                    .withSizeKeepingCentre(kChannelCellWidth, btnSize.y));
+    keyRow.removeFromRight(layout::kGapRelated);
 
-    jassert(contentWidth + numGaps * layout::kGapS <= area.getWidth()); // workspace too narrow
+    addNodeButton.setBoundsCentredIn(keyRow.removeFromLeft(addNodeButton.getIntrinsicSize().x));
+    keyRow.removeFromLeft(layout::kGapBonded);
+    randomiseButton.setBoundsCentredIn(keyRow.removeFromLeft(randomiseButton.getIntrinsicSize().x));
 
-    auto row = area;
-    inputFilterUI.setBounds(centreIntrinsic(row.removeFromLeft(filterSize.x), filterSize));
-    row.removeFromLeft(gap);
-
-    // Morph pad takes the middle of the workspace, with its ADD key directly above it - the key
-    // belongs to the pad, so it is bonded to it rather than floating in the row.
-    {
-        const auto padSize = constellation.getIntrinsicSize();
-        const auto btnSize = addNodeButton.getIntrinsicSize();
-
-        auto padColumn = row.removeFromLeft(padSize.x);
-        row.removeFromLeft(gap);
-
-        auto stack = padColumn.withSizeKeepingCentre(
-            padSize.x, btnSize.y + layout::kGapBonded + padSize.y);
-
-        auto topRow = stack.removeFromTop(btnSize.y);
-        channelModeCell.setBounds(topRow.removeFromRight(kChannelCellWidth)
-                                        .withSizeKeepingCentre(kChannelCellWidth, btnSize.y));
-        topRow.removeFromRight(layout::kGapRelated);
-
-        addNodeButton.setBoundsCentredIn(topRow.removeFromLeft(addNodeButton.getIntrinsicSize().x));
-        topRow.removeFromLeft(layout::kGapBonded);
-        randomiseButton.setBoundsCentredIn(topRow.removeFromLeft(randomiseButton.getIntrinsicSize().x));
-
-
-        stack.removeFromTop(layout::kGapBonded);
-        const auto padBounds = stack.removeFromTop(padSize.y);
-        constellation.setBoundsCentredIn(padBounds);
-
-        // The inspector floats over the chart's bottom-left, where stars are least likely to be
-        // hiding: it is a transient panel, so it must not force the workspace to reserve room.
-        starPanel.setBounds(padBounds.getX() + layout::kGapRelated,
-                            padBounds.getBottom() - kStarPanelHeight - layout::kGapRelated,
-                            kStarPanelWidth, kStarPanelHeight);
-    }
-
-    invis::ui::InvisKnob* const knobs[] = { &xsDemoKnob, &trimKnob, &outputKnob };
-    for (size_t i = 0; i < knobSizes.size(); ++i)
-    {
-        knobs[i]->setBoundsCentredIn(row.removeFromLeft(knobSizes[i].x));
-        row.removeFromLeft(gap);
-    }
-
-    // 4. Footer: two labelled button rows at constant heights
-    auto layoutButtonRow = [](juce::Rectangle<int> rowArea, juce::OwnedArray<juce::TextButton>& buttons)
-    {
-        const int count = buttons.size();
-        if (count == 0) return;
-
-        const int btnW = rowArea.getWidth() / count;
-        for (int i = 0; i < count; ++i)
-        {
-            if (auto* btn = buttons[i])
-                btn->setBounds(rowArea.removeFromLeft(btnW).reduced(2, 0));
-        }
-    };
-
-    footerArea.removeFromTop(kFooterLabelHeight);
-    layoutButtonRow(footerArea.removeFromTop(kFooterButtonHeight), panelThemeButtons);
-
-    footerArea.removeFromTop(layout::kGapM);
-    footerArea.removeFromTop(kFooterLabelHeight);
-    layoutButtonRow(footerArea.removeFromTop(kFooterButtonHeight), colorButtons);
+    stack.removeFromTop(layout::kGapBonded);
+    constellation.setBoundsCentredIn(stack.removeFromTop(padSize.y));
 }
