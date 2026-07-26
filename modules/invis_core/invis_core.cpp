@@ -21,6 +21,7 @@
 #include "functional_modules/top_sidebar/TopSidebarUI.cpp"
 #include "effects/InvisEffectSlot.cpp"
 #include "effects/InvisConstellationEngine.cpp"
+#include "functional_modules/InvisPresetStore.cpp"
 #include "functional_modules/constellation/ConstellationWorkspace.cpp"
 #include "chassis/InvisChassisUI.cpp"
 #include "functional_modules/oversampling/OversamplingDSP.cpp"

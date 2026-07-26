@@ -4,7 +4,8 @@
 ConstellationRoyalEditor::ConstellationRoyalEditor(ConstellationRoyalProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
       chassis(p.chassis, p.apvts),
-      workspace(p.engine, p.apvts)
+      workspace(p.engine, p.apvts),
+      presets(p.apvts, "Invis Audio", "Constellation Royal")
 {
     addAndMakeVisible(canvas);
     canvas.addAndMakeVisible(chassis);
@@ -14,24 +15,16 @@ ConstellationRoyalEditor::ConstellationRoyalEditor(ConstellationRoyalProcessor& 
     chassis.onTick = [this](float dt) { workspace.tick(dt); };
     chassis.onStateRestored = [this]() { workspace.reloadFromState(); };
 
-    // Presets are named after real constellations, which is the series' own convention. Storage is
-    // not implemented yet - selecting one only reports its path.
-    using invis::modules::PresetNode;
-    chassis.getTop().setPresetTree(PresetNode::folder("", {
-        PresetNode::preset("Init"),
-        PresetNode::folder("Zodiac", {
-            PresetNode::preset("Aries"), PresetNode::preset("Gemini"),
-            PresetNode::preset("Leo"), PresetNode::preset("Libra"),
-        }),
-        PresetNode::folder("Northern", {
-            PresetNode::preset("Cygnus"), PresetNode::preset("Lyra"),
-            PresetNode::preset("Cassiopeia"), PresetNode::preset("Draco"),
-        }),
-        PresetNode::folder("Southern", {
-            PresetNode::preset("Orion"), PresetNode::preset("Carina"),
-            PresetNode::preset("Crux"),
-        }),
-    }));
+    // THE LIBRARY. Real asterisms, and not as decoration: the shape a constellation actually has
+    // decides what it is good for. Corona Borealis is a closed arc, so it becomes a parallel bank
+    // of drive; Draco is a long winding chain, so it becomes spaces you walk through in series.
+    // See InvisPresetStore for where they live and why there.
+    presets.refresh();
+    refreshPresetTree();
+
+    chassis.getTop().onPresetChanged = [this](int index, const juce::String&) {
+        if (presets.load(index)) workspace.reloadFromState();
+    };
 
     // LAST: every child now exists and carries its final size preset, so the first layout pass can
     // read correct intrinsic sizes.
@@ -74,4 +67,9 @@ void ConstellationRoyalEditor::resized()
 void ConstellationRoyalEditor::layoutCanvas()
 {
     chassis.setBounds(canvas.getLocalBounds());
+}
+
+void ConstellationRoyalEditor::refreshPresetTree()
+{
+    chassis.getTop().setPresetTree(presets.getTree());
 }

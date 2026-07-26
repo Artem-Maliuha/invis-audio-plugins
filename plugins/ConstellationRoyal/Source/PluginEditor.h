@@ -36,6 +36,12 @@ private:
     invis::modules::InvisChassisUI chassis;
     invis::modules::ConstellationWorkspace workspace;
 
+    // The library. Owned by the editor because it needs a live state tree to build a factory
+    // preset from, and the editor is where one is guaranteed to exist.
+    invis::modules::InvisPresetStore presets;
+
+    void refreshPresetTree();
+
     const juce::Point<int> designSize {
         invis::modules::InvisChassisUI::getDesignSize(
             invis::modules::ConstellationWorkspace::getDesignSize())
