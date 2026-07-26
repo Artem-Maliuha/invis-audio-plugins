@@ -71,10 +71,11 @@ std::vector<float> InvisConstellation::computeWeights(const std::vector<Constell
 
     for (const auto& n : nodes)
     {
-        if (n.radius <= 1.0e-4f) { weights.push_back(0.0f); continue; }
+        const float reach = getReach(n);
+        if (reach <= 1.0e-4f) { weights.push_back(0.0f); continue; }
 
         const float dist = observerPosition.getDistanceFrom(n.position);
-        const float t = juce::jlimit(0.0f, 1.0f, dist / n.radius);
+        const float t = juce::jlimit(0.0f, 1.0f, dist / reach);
 
         // Smoothstep falloff: flat-topped at the star and flat-bottomed at the halo edge, so
         // neither has a hard corner you can hear as a step while dragging.
@@ -340,7 +341,7 @@ float InvisConstellation::figureRadius(const std::vector<ConstellationNode>& nod
     for (int idx : stars)
     {
         if (idx < 0 || idx >= static_cast<int>(nodes.size())) continue;
-        sum += nodes[static_cast<size_t>(idx)].radius;
+        sum += getReach(nodes[static_cast<size_t>(idx)]);
         ++n;
     }
 
@@ -700,6 +701,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     // that is the morph - but it has no business claiming a brighter link.
                     juce::ignoreUnused(count);
                     c.glow = silent ? 0.0f : feed;
+                    c.direct = isEntry ? c.glow : 0.0f;
                 }
             }
             else
@@ -713,6 +715,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     c.isEntry = marksEntry && isEntry;
                     c.amount = silent ? 0.0f : feed * nodes[static_cast<size_t>(idx)].sensitivity;
                     c.glow = std::abs(c.amount);
+                    c.direct = isEntry ? c.glow : 0.0f;
                 }
             }
 
@@ -987,7 +990,7 @@ bool InvisConstellation::isFreeSky(juce::Point<float> p) const
     // would put a new star inside somebody else's field, where it is neither free nor separate.
     const auto here = toNormalized(p);
     for (const auto& node : nodes)
-        if (here.getDistanceFrom(node.position) < node.radius * 0.92f) return false;
+        if (here.getDistanceFrom(node.position) < getReach(node) * 0.92f) return false;
 
     return true;
 }
@@ -1049,9 +1052,50 @@ void InvisConstellation::randomise()
                                                             0.18f + rng.nextFloat() * 0.22f);
     }
 
+    // AND HOW THEY ARE JOINED. Shuffling only the positions rearranged the same figure over and
+    // over: the routing is the topology, so a randomiser that never touches the links never
+    // actually offers you a different instrument.
+    links.clear();
+
+    if (n >= 2)
+    {
+        // Walk a shuffled order and join neighbours with a coin toss, so runs of joined stars form
+        // naturally alongside lone ones - a fully connected chart and a fully scattered one are
+        // both boring, and both are what uniform per-pair chance produces.
+        std::vector<int> order(static_cast<size_t>(n));
+        for (int i = 0; i < n; ++i) order[static_cast<size_t>(i)] = i;
+
+        for (int i = n - 1; i > 0; --i)
+            std::swap(order[static_cast<size_t>(i)],
+                      order[static_cast<size_t>(rng.nextInt(i + 1))]);
+
+        for (int i = 0; i + 1 < n; ++i)
+            if (rng.nextFloat() < 0.62f)
+                links.push_back({ order[static_cast<size_t>(i)], order[static_cast<size_t>(i + 1)] });
+
+        // One extra line now and then, which is what closes a figure into a parallel cluster.
+        if (n >= 3 && rng.nextFloat() < 0.45f)
+        {
+            const int a = order.front();
+            const int b = order[static_cast<size_t>(rng.nextInt(n - 1) + 1)];
+            if (canLink(a, b)) links.push_back({ a, b });
+        }
+    }
+
+    lastEntry[0] = lastEntry[1] = -1;
+
     if (onGeometryChanged) onGeometryChanged();
     notifyWeights();
     repaint();
+}
+
+void InvisConstellation::randomiseObservers()
+{
+    // Kept well inside the field: an observer dropped against the edge can only ever hear whatever
+    // happens to be on that side, which is not a starting point anyone would have chosen.
+    for (int i = 0; i < getNumObservers(); ++i)
+        setObserverPosition(i, { 0.18f + rng.nextFloat() * 0.64f,
+                                 0.18f + rng.nextFloat() * 0.64f });
 }
 
 void InvisConstellation::setNodePosition(int index, juce::Point<float> n)
@@ -1597,7 +1641,7 @@ void InvisConstellation::paintGlassWell(juce::Graphics& g, juce::Rectangle<float
 void InvisConstellation::paintAura(juce::Graphics& g, const ConstellationNode& node, float weight)
 {
     const auto centre = toPixels(node.position);
-    const float r = radiusToPixels(node.radius);
+    const float r = radiusToPixels(getReach(node));
     if (r <= 1.0f) return;
 
     // NO boundary ring. A drawn circle announces a hard edge the maths does not have - the falloff
@@ -1698,7 +1742,7 @@ void InvisConstellation::paintFigureHalo(juce::Graphics& g, const std::vector<in
 
         const auto& node = nodes[static_cast<size_t>(idx)];
         const auto at = toPixels(node.position);
-        const float lobe = radiusToPixels(node.radius) * 0.72f;
+        const float lobe = radiusToPixels(getReach(node)) * 0.72f;
         if (lobe <= 1.0f) continue;
 
         const auto tint = node.colour.interpolatedWith(light.colour, 0.62f);
@@ -2196,11 +2240,13 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
     // The core reflects the STRONGEST claim on it, so a star feeding one channel hard still reads
     // as active even when the other channel is nowhere near it.
     float peak = 0.0f;
+    float direct = 0.0f;
     bool isEntry = false;
     for (int p = 0; p < getNumObservers(); ++p)
     {
         const auto& c = frame.heard[static_cast<size_t>(p)];
         peak = std::max(peak, juce::jlimit(0.0f, 1.0f, c[static_cast<size_t>(index)].glow));
+        direct = std::max(direct, juce::jlimit(0.0f, 1.0f, c[static_cast<size_t>(index)].direct));
         isEntry = isEntry || c[static_cast<size_t>(index)].isEntry;
     }
 
@@ -2325,6 +2371,34 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
                                                      + (hovered ? 0.15f : 0.0f))));
     g.drawEllipse(centre.x - rNode, centre.y - rNode, rNode * 2.0f, rNode * 2.0f,
                   hovered ? 1.8f : 1.3f + 1.4f * beat);
+
+    // FED BY THE CHAIN, NOT BY YOU. A downstream star is fully lit and completely out of the
+    // observer's reach, so brightening its aura made the chart argue with itself: a wide field
+    // sitting under the observer while the signal went somewhere else, with nothing in the picture
+    // to explain why.
+    //
+    // A CORONA instead - tight, hot, hugging the core. It reads as lit from WITHIN rather than as
+    // a claim on the space around it, which is exactly the difference: reach is a place you can
+    // stand, and this is not one.
+    const float relayed = juce::jlimit(0.0f, 1.0f, peak - direct);
+
+    if (relayed > 0.01f)
+    {
+        const float corona = rNode * 1.85f;
+
+        juce::ColourGradient ring(juce::Colours::transparentBlack, centre.x, centre.y,
+                                  juce::Colours::transparentBlack, centre.x + corona, centre.y, true);
+        ring.addColour(0.52, node.colour.withAlpha(0.06f * relayed));
+        ring.addColour(0.74, node.colour.withAlpha(0.34f * relayed));
+        ring.addColour(0.88, node.colour.withAlpha(0.16f * relayed));
+
+        g.setGradientFill(ring);
+        g.fillEllipse(centre.x - corona, centre.y - corona, corona * 2.0f, corona * 2.0f);
+
+        g.setColour(node.colour.withAlpha(0.42f * relayed));
+        g.drawEllipse(centre.x - rNode * 1.28f, centre.y - rNode * 1.28f,
+                      rNode * 2.56f, rNode * 2.56f, 1.1f);
+    }
 
     // THE STRIKE. It was there and nobody could see it: the ring started at the star's own edge,
     // where the edge stroke already is, and only became visible once it had expanded - by which
@@ -2473,7 +2547,7 @@ void InvisConstellation::paint(juce::Graphics& g)
             if (idx >= 0 && idx < static_cast<int>(nodes.size()))
             {
                 inClosed[static_cast<size_t>(idx)] = true;
-                gate = std::max(gate, contribs[static_cast<size_t>(idx)].glow);
+                gate = std::max(gate, contribs[static_cast<size_t>(idx)].direct);
             }
 
         paintFigureHalo(g, cl.stars, std::min(1.0f, gate));
@@ -2481,7 +2555,7 @@ void InvisConstellation::paint(juce::Graphics& g)
 
     for (size_t i = 0; i < nodes.size(); ++i)
         if (!inClosed[i])
-            paintAura(g, nodes[i], contribs[i].glow);
+            paintAura(g, nodes[i], contribs[i].direct);
 
     paintPolygon(g, frame);
     paintGhostNode(g);

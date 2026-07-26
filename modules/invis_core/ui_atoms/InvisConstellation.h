@@ -204,6 +204,19 @@ struct StarContribution {
      */
     float glow { 0.0f };
 
+    /**
+     * How much of that reaches this star FROM THE OBSERVER rather than along the chain.
+     *
+     * The aura is a claim about DISTANCE: it says "stand inside me and you feed me directly". A
+     * star three hops downstream is fully lit and yet the observer cannot reach it at all - so
+     * lighting its aura up made the chart contradict itself. The field was wide enough to sit
+     * right under the observer while the signal went somewhere else entirely, and there was no way
+     * to tell from the picture why.
+     *
+     * So the wide field answers only this, and chain-fed stars say so another way. See paintNode.
+     */
+    float direct { 0.0f };
+
     int chainOrder { -1 };    // 0 = entry point, -1 = parallel or silent
     bool isEntry { false };
 };
@@ -296,7 +309,11 @@ public:
      * rather than uniformly at random: pure uniform noise clusters and leaves bald patches, so
      * half the throws would produce a figure with stars piled on top of each other.
      */
+    /** Shuffles the stars: where they sit AND how they are joined. */
     void randomise();
+
+    /** Drops the observers somewhere new, leaving the chart itself alone. */
+    void randomiseObservers();
 
     void setNodePosition(int index, juce::Point<float> normalized);
     void setNodeRadius(int index, float normalizedRadius);
@@ -402,6 +419,23 @@ public:
     bool linkStars(int a, int b);
     void unlinkStars(int a, int b);
     int countLinks(int starIndex) const;
+
+    /**
+     * HOW FAR A STAR REACHES, which is its stored radius scaled by its sensitivity.
+     *
+     * The two were separate and only one of them was on screen: the aura was drawn at the raw
+     * radius, so turning a star up made it brighter and never made it REACH further. That reads as
+     * a control that has run out of effect, and it is not what "sensitivity" means on a chart
+     * where distance is the whole instrument - a star you have turned up should be audible from
+     * further away.
+     *
+     * ONE value for both the picture and the routing: the falloff, the enclosure and the aura all
+     * take their radius from here, so what you see is exactly what the observer walks into.
+     */
+    static float getReach(const ConstellationNode& node)
+    {
+        return node.radius * (0.25f + 1.5f * juce::jlimit(0.0f, 1.0f, node.sensitivity));
+    }
 
     /** 0..1, resting at 0.5. Snaps to the half mark so the resting value is findable by hand. */
     void setNodeSensitivity(int index, float amount);

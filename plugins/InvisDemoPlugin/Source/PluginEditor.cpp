@@ -115,13 +115,33 @@ InvisDemoPluginEditor::StarPanel::StarPanel(InvisDemoPluginEditor& o) : owner(o)
     deleteButton.setLabel("DELETE");
     deleteButton.setLedVisible(false);
     deleteButton.setToggleMode(false);
-    deleteButton.setLedColour(juce::Colour::fromRGB(255, 23, 68));
+    deleteButton.setDangerous(true);
     deleteButton.onClick = [this]() {
         if (index < 0) return;
 
-        const int doomed = index;
-        showFor(-1);                       // let go BEFORE the thing goes away
-        owner.constellation.removeNode(doomed);
+        // ASKS FIRST. Removing a star takes its links with it, which silently rewires whatever it
+        // was part of - a chain becomes two, a closed figure opens - and none of that is anything
+        // an undo-less chart can hand back.
+        const auto& node = owner.constellation.getNode(index);
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader("DELETE " + node.label.toUpperCase() + "?");
+        menu.addItem(1, "Delete this star");
+        menu.addItem(2, "Cancel");
+
+        menu.setLookAndFeel(&owner.popupLook);
+        menu.showMenuAsync(juce::PopupMenu::Options()
+                               .withTargetComponent(&deleteButton)
+                               .withMinimumWidth(150)
+                               .withStandardItemHeight(19),
+                           [this](int result)
+        {
+            if (result != 1 || index < 0) return;
+
+            const int doomed = index;
+            showFor(-1);                   // let go BEFORE the thing goes away
+            owner.constellation.removeNode(doomed);
+        });
     };
     addAndMakeVisible(deleteButton);
 
@@ -201,7 +221,7 @@ void InvisDemoPluginEditor::StarPanel::paint(juce::Graphics& g)
     const auto theme = invis::ui::InvisTheme::getGlobalDefault();
     auto bounds = getLocalBounds().toFloat();
 
-    paintPanelShell(g, bounds, "STAR");
+    paintPanelShell(g, bounds, "STAR SETTINGS");
 
     if (index >= 0)
     {
@@ -269,22 +289,28 @@ InvisDemoPluginEditor::SkyTools::SkyTools(InvisDemoPluginEditor& o) : owner(o)
     };
     addAndMakeVisible(channelModeCell);
 
-    // Straight to a star, no menu. Deciding what each one is comes later; getting something on the
-    // sky to push around is a different intent, and pairing it with a list to read every time is
-    // what makes trying things out feel expensive.
-    addRandomButton.setButtonSize(invis::ui::InvisButtonSize::XS);
-    addRandomButton.setLabel("+ STAR");
-    addRandomButton.setLedVisible(false);
-    addRandomButton.setToggleMode(false);
-    addRandomButton.onClick = [this]() { owner.addRandomStar(); };
-    addAndMakeVisible(addRandomButton);
+    // TWO WAYS TO ADD, because they are two different intents. One is "I want a phaser"; the
+    // other is "I want something on the sky to push around". Pairing the second with a list to
+    // read every time is what makes trying things out feel expensive.
+    auto key = [this](invis::ui::InvisButton& b, const juce::String& label,
+                      std::function<void()> action)
+    {
+        b.setButtonSize(invis::ui::InvisButtonSize::XS);
+        b.setLabel(label);
+        b.setLedVisible(false);
+        b.setToggleMode(false);
+        b.onClick = std::move(action);
+        addAndMakeVisible(b);
+    };
 
-    randomiseButton.setButtonSize(invis::ui::InvisButtonSize::XS);
-    randomiseButton.setLabel("RANDOM");
-    randomiseButton.setLedVisible(false);
-    randomiseButton.setToggleMode(false);
-    randomiseButton.onClick = [this]() { owner.constellation.randomise(); };
-    addAndMakeVisible(randomiseButton);
+    key(addStarButton,   "+ STAR",  [this]() { owner.chooseEffectThen({}); });
+    key(addRandomButton, "+ RND",   [this]() { owner.addRandomStar(); });
+
+    // Two shufflers, because they shuffle different things. One rebuilds the INSTRUMENT - where
+    // the stars sit and how they are joined; the other only moves WHERE YOU ARE STANDING, which
+    // is the fastest way to hear what an instrument you already like can do.
+    key(shuffleStarsButton,    "STARS",   [this]() { owner.constellation.randomise(); });
+    key(shuffleObserverButton, "OBSERVER", [this]() { owner.constellation.randomiseObservers(); });
 }
 
 void InvisDemoPluginEditor::SkyTools::resized()
@@ -293,10 +319,21 @@ void InvisDemoPluginEditor::SkyTools::resized()
 
     auto area = getLocalBounds();
 
-    randomiseButton.setBoundsCentredIn(area.removeFromRight(randomiseButton.getIntrinsicSize().x));
+    // Right to left, grouped by what they do to: the shufflers, then the two ways to add, then the
+    // channel mode - which is the odd one out, so it gets the wider gap.
+    shuffleObserverButton.setBoundsCentredIn(
+        area.removeFromRight(shuffleObserverButton.getIntrinsicSize().x));
     area.removeFromRight(layout::kGapBonded);
+    shuffleStarsButton.setBoundsCentredIn(
+        area.removeFromRight(shuffleStarsButton.getIntrinsicSize().x));
+
+    area.removeFromRight(layout::kGapGroup);
+
     addRandomButton.setBoundsCentredIn(area.removeFromRight(addRandomButton.getIntrinsicSize().x));
-    area.removeFromRight(layout::kGapRelated);
+    area.removeFromRight(layout::kGapBonded);
+    addStarButton.setBoundsCentredIn(area.removeFromRight(addStarButton.getIntrinsicSize().x));
+
+    area.removeFromRight(layout::kGapGroup);
     channelModeCell.setBounds(area.removeFromRight(54));
 }
 

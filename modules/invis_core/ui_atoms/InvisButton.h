@@ -71,6 +71,17 @@ public:
 
     /** Explicit LED colour. Without one the LED follows the theme accent. */
     void setLedColour(juce::Colour colour) { customLedColour = colour; repaint(); }
+
+    /**
+     * A key that DESTROYS something.
+     *
+     * Not a colour setter: the point is not "make this red", it is "this one is not like the
+     * others". A destructive key that looks exactly like its neighbours is a key you will press by
+     * reflex, so it wears the warning at rest - not on hover, not once pressed - and the caption
+     * carries it too, because the rim alone reads as decoration.
+     */
+    void setDangerous(bool shouldWarn) { dangerous = shouldWarn; repaint(); }
+    bool isDangerous() const { return dangerous; }
     void clearLedColour() { customLedColour.reset(); repaint(); }
 
     void setLedMountType(LEDMountType type) { ledMount = type; repaint(); }
@@ -124,6 +135,7 @@ private:
     bool isPressed { false };
 
     bool ledVisible { true };
+    bool dangerous { false };
     bool blinking { false };
     float blinkRateHz { 2.6f };
     float blinkPhase { 0.0f };

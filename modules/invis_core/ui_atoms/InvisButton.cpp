@@ -139,7 +139,7 @@ void InvisButton::paint(juce::Graphics& g)
     if (content.getWidth() <= 0.0f || content.getHeight() <= 0.0f) return;
 
     const bool lit = toggleState || blinking;
-    const auto ledColour = getLedColour();
+    const auto ledColour = dangerous ? juce::Colour::fromRGB(255, 23, 68) : getLedColour();
     const float lum = ledBallistics.getCurrentLuminance();
 
     // 1. Carved key seat: the chassis recess the key sits in
@@ -165,6 +165,16 @@ void InvisButton::paint(juce::Graphics& g)
     // 3. Chamfered bevel: bright top edge, dark bottom edge
     g.setColour(juce::Colours::white.withAlpha(isPressed ? 0.06f : 0.14f));
     g.drawRoundedRectangle(cap.reduced(0.5f), m.corner, 1.0f);
+
+    // A destructive key wears its warning AT REST. Waiting for hover or for the press would put
+    // the notice after the decision it is meant to inform.
+    if (dangerous)
+    {
+        g.setColour(ledColour.withAlpha(0.10f));
+        g.fillRoundedRectangle(cap, m.corner);
+        g.setColour(ledColour.withAlpha(isPressed ? 0.75f : 0.50f));
+        g.drawRoundedRectangle(cap.reduced(0.5f), m.corner, 1.0f);
+    }
 
     // Emissive rim wash while the key is active
     if (lum > 0.02f || tintCap)
@@ -205,8 +215,10 @@ void InvisButton::paint(juce::Graphics& g)
     if (ledVisible)
         InvisLED::drawLEDDot(g, ledCentre, m.ledDiameter * 0.5f, ledColour, lum, ledMount);
 
-    g.setColour(tintCap ? ledColour.brighter(0.45f)
-                        : (lit ? theme.textPrimary : theme.textSecondary.withAlpha(0.75f)));
+    g.setColour(dangerous ? ledColour.brighter(0.25f)
+                          : (tintCap ? ledColour.brighter(0.45f)
+                                     : (lit ? theme.textPrimary
+                                            : theme.textSecondary.withAlpha(0.75f))));
     g.setFont(font);
     g.drawText(labelText, textArea, juce::Justification::centred, false);
 }

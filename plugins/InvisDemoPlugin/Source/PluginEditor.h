@@ -99,8 +99,10 @@ private:
 
         InvisDemoPluginEditor& owner;
         invis::ui::InvisCellSelector channelModeCell;
-        invis::ui::InvisButton addRandomButton;
-        invis::ui::InvisButton randomiseButton;
+        invis::ui::InvisButton addStarButton;      // asks which effect
+        invis::ui::InvisButton addRandomButton;    // does not
+        invis::ui::InvisButton shuffleStarsButton;
+        invis::ui::InvisButton shuffleObserverButton;
     };
 
     /** The chassis's own dropdown - a menu here is part of the instrument, not of the host. */
@@ -108,7 +110,7 @@ private:
 
     SkyTools skyTools { *this };
     static constexpr int kSkyToolsHeight = 22;
-    static constexpr int kSkyToolsWidth  = 236;
+    static constexpr int kSkyToolsWidth  = 400;
 
     /**
      * Inspector for one star. Lives in the PLUGIN, not in the atom: choosing which effect a star
