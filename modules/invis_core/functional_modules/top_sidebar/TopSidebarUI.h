@@ -74,6 +74,22 @@ public:
     std::function<void(int index, const juce::String& path)> onPresetChanged;
 
     /**
+     * Library actions, offered at the bottom of the preset menu.
+     *
+     * On the MENU rather than as two more keys in the top bar: saving and restoring are things you
+     * do while already looking at the library, and a bar that grows a button for every rare action
+     * ends up being mostly rare actions.
+     */
+    std::function<void()> onSavePreset;
+    std::function<void()> onRestoreFactory;
+    std::function<void()> onRevealPresetFolder;
+
+    // Above any index a preset can take, so the library may grow without ever colliding.
+    static constexpr int kSaveId    = 100000;
+    static constexpr int kRevealId  = 100001;
+    static constexpr int kRestoreId = 100002;
+
+    /**
      * The plugin's state tree was REPLACED wholesale - by an A/B/C switch or a preset recall.
      *
      * Parameters look after themselves through their attachments. Anything a plugin keeps in the

@@ -26,6 +26,43 @@ ConstellationRoyalEditor::ConstellationRoyalEditor(ConstellationRoyalProcessor& 
         if (presets.load(index)) workspace.reloadFromState();
     };
 
+    chassis.getTop().onSavePreset = [this]() {
+        // ASYNCHRONOUS, and the name is typed rather than picked. A file chooser would put the
+        // library's location in the user's hands on every save, which is exactly the thing the
+        // folder convention exists to decide once.
+        auto* window = new juce::AlertWindow("SAVE PRESET",
+                                             "Name it. Use Category/Name to file it in a folder.",
+                                             juce::MessageBoxIconType::NoIcon);
+
+        window->addTextEditor("path", "User/My Constellation", {});
+        window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+        window->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, window](int result)
+            {
+                const auto typed = window->getTextEditorContents("path").trim();
+                delete window;
+
+                if (result != 1 || typed.isEmpty()) return;
+
+                const auto slash = typed.lastIndexOfChar('/');
+                const auto category = slash > 0 ? typed.substring(0, slash) : juce::String("User");
+                const auto name = slash > 0 ? typed.substring(slash + 1) : typed;
+
+                if (presets.save(category, name)) refreshPresetTree();
+            }), false);
+    };
+
+    chassis.getTop().onRestoreFactory = [this]() {
+        presets.restoreFactory();
+        refreshPresetTree();
+    };
+
+    chassis.getTop().onRevealPresetFolder = [this]() {
+        presets.getUserFolder().revealToUser();
+    };
+
     // LAST: every child now exists and carries its final size preset, so the first layout pass can
     // read correct intrinsic sizes.
     invis::ui::applyDesignResizeLimits(*this, designSize.x, designSize.y);

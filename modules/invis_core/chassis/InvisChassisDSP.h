@@ -39,6 +39,19 @@ public:
     static constexpr const char* kOsPrefix     = "os_";
 
     /**
+     * WHERE YOU ARE STANDING, as automatable parameters.
+     *
+     * Everything else about the chart lives in the state tree, which is right: stars, links and
+     * their settings are structure, and structure is not something a host draws a line for. The
+     * OBSERVER is different. It is the performance - the one control you move while listening -
+     * and while it stayed in the state tree it could not be automated, could not be learned to a
+     * controller, and could not be recorded by a host at all.
+     *
+     * So it alone is promoted. Two per listener, because a position is two numbers.
+     */
+    static constexpr const char* kObserverPrefix = "obs_";
+
+    /**
      * Every chassis parameter, in one call.
      *
      * A plugin adds this to its layout and then adds only its own. Forgetting one set used to mean
@@ -50,6 +63,20 @@ public:
         OversamplingDSP::addParameters(layout, kOsPrefix);
         InputSidebarDSP::addParameters(layout, kInputPrefix);
         OutputSidebarDSP::addParameters(layout, kOutputPrefix);
+
+        for (int i = 0; i < 2; ++i)
+        {
+            const auto tag = juce::String(kObserverPrefix) + juce::String(i);
+            const auto name = juce::String("Observer ") + (i == 0 ? "1" : "2") + " ";
+
+            layout.add(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID { tag + "x", 1 }, name + "X",
+                juce::NormalisableRange<float>(0.0f, 1.0f), 0.5f));
+
+            layout.add(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID { tag + "y", 1 }, name + "Y",
+                juce::NormalisableRange<float>(0.0f, 1.0f), 0.5f));
+        }
     }
 
     void prepare(const juce::dsp::ProcessSpec& spec)

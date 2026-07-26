@@ -26,9 +26,21 @@ TopSidebarUI::TopSidebarUI(juce::AudioProcessorValueTreeState& apvts,
 
     presetField.onBuildPopup = [this](juce::PopupMenu& menu) {
         buildPresetMenu(presetRoot, menu, flatPresets, currentPresetIndex);
+
+        // Well clear of the presets, and numbered from a base no preset can reach, so a library
+        // that grows can never collide with an action.
+        menu.addSeparator();
+        menu.addItem(kSaveId, "Save preset...");
+        menu.addItem(kRevealId, "Show preset folder");
+        menu.addSeparator();
+        menu.addItem(kRestoreId, "Restore factory presets");
     };
 
     presetField.onPopupResult = [this](int id) {
+        if (id == kSaveId)    { if (onSavePreset) onSavePreset(); return; }
+        if (id == kRevealId)  { if (onRevealPresetFolder) onRevealPresetFolder(); return; }
+        if (id == kRestoreId) { if (onRestoreFactory) onRestoreFactory(); return; }
+
         presetField.setSelectedIndex(id - 1, juce::sendNotificationSync);
     };
 

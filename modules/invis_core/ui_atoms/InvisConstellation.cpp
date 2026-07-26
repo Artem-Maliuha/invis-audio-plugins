@@ -1541,6 +1541,8 @@ void InvisConstellation::mouseDown(const juce::MouseEvent& e)
     {
         grab = Grab::Observer;
         grabbedObserver = o;
+
+        if (onObserverDragStarted) onObserverDragStarted(o);
         return;
     }
 
@@ -1667,6 +1669,9 @@ void InvisConstellation::mouseUp(const juce::MouseEvent&)
     {
         onNodeClicked(grabbedIndex);
     }
+
+    if (grab == Grab::Observer && grabbedObserver >= 0 && onObserverDragEnded)
+        onObserverDragEnded(grabbedObserver);
 
     grab = Grab::None;
     grabbedIndex = -1;

@@ -691,7 +691,39 @@ ConstellationWorkspace::ConstellationWorkspace(dsp::InvisConstellationEngine& e,
     constellation.setPadSize(ui::InvisConstellationSize::L);
     // MOVING THE OBSERVER CHANGES THE ROUTE without touching the geometry: a different star becomes
     // the entry, and the whole chain renumbers behind it. Geometry callbacks alone would miss it.
-    constellation.onWeightsChanged = [this](int, const std::vector<float>&) { pushChartToEngine(); };
+    constellation.onWeightsChanged = [this](int index, const std::vector<float>&) {
+        pushChartToEngine();
+        pushObserverToParams(index);
+    };
+
+    // THE ONE CONTROL A HOST CAN DRAW A LINE FOR. See InvisChassisDSP::kObserverPrefix.
+    for (int i = 0; i < 2; ++i)
+        for (int axis = 0; axis < 2; ++axis)
+        {
+            auto& slider = observerSliders[i][axis];
+            slider.setRange(0.0, 1.0, 0.0);
+
+            observerAttachments[static_cast<size_t>(i * 2 + axis)] =
+                std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                    apvtsRef,
+                    juce::String(InvisChassisDSP::kObserverPrefix) + juce::String(i)
+                        + (axis == 0 ? "x" : "y"),
+                    slider);
+
+            slider.onValueChange = [this]() { pullObserverFromParams(); };
+        }
+
+    constellation.onObserverDragStarted = [this](int index) {
+        observerSliders[juce::jlimit(0, 1, index)][0].startedDragging();
+        observerSliders[juce::jlimit(0, 1, index)][1].startedDragging();
+    };
+
+    constellation.onObserverDragEnded = [this](int index) {
+        observerSliders[juce::jlimit(0, 1, index)][0].stoppedDragging();
+        observerSliders[juce::jlimit(0, 1, index)][1].stoppedDragging();
+    };
+
+    pullObserverFromParams();
     addAndMakeVisible(constellation);
 
     constellation.onNodeClicked = [this](int index) { starPanel.showFor(index); };
@@ -733,6 +765,36 @@ void ConstellationWorkspace::tick(float dt)
 {
     constellation.tickAnimation(dt);
     effectPanel.tickLamps(dt);
+}
+
+void ConstellationWorkspace::pushObserverToParams(int index)
+{
+    if (syncingObserver) return;
+
+    const juce::ScopedValueSetter<bool> guard(syncingObserver, true);
+    const int i = juce::jlimit(0, 1, index);
+
+    const auto pos = constellation.getObserverPosition(i);
+    const float aspect = std::max(0.01f, constellation.getAspect());
+
+    observerSliders[i][0].setValue(pos.x, juce::sendNotificationSync);
+    observerSliders[i][1].setValue(juce::jlimit(0.0f, 1.0f, pos.y / aspect),
+                                   juce::sendNotificationSync);
+}
+
+void ConstellationWorkspace::pullObserverFromParams()
+{
+    if (syncingObserver) return;
+
+    const juce::ScopedValueSetter<bool> guard(syncingObserver, true);
+    const float aspect = std::max(0.01f, constellation.getAspect());
+
+    for (int i = 0; i < 2; ++i)
+        constellation.setObserverPosition(
+            i, { static_cast<float>(observerSliders[i][0].getValue()),
+                 static_cast<float>(observerSliders[i][1].getValue()) * aspect });
+
+    pushChartToEngine();
 }
 
 void ConstellationWorkspace::pushChartToEngine()

@@ -603,6 +603,16 @@ public:
 
     RoutingStages getRoutingStages(int observerIndex) const;
 
+    /**
+     * The observer has been TAKEN HOLD OF, and let go.
+     *
+     * A host's Touch and Latch modes are driven by exactly this pair and nothing else. Reporting
+     * only the value leaves Touch never releasing and Latch never arming - the modes exist in
+     * the DAW and behave as if the control were never moved.
+     */
+    std::function<void(int observerIndex)> onObserverDragStarted;
+    std::function<void(int observerIndex)> onObserverDragEnded;
+
     std::function<void(int index)> onNodeClicked;
 
     /**

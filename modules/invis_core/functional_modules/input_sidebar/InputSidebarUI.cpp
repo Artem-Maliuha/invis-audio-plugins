@@ -180,6 +180,17 @@ InputSidebarUI::InputSidebarUI(juce::AudioProcessorValueTreeState& apvts, const 
     hiddenTrimSlider.onValueChange();
     hiddenHpfSlider.onValueChange();
     hiddenLpfSlider.onValueChange();
+
+    // GESTURES, so the host's TOUCH and LATCH modes work at all. They are the DAW's modes, not
+    // ours, but a plugin that never says "I have taken hold of this" and "I have let go" breaks
+    // both: Touch never releases and Latch never arms. This is the plugin's half of that
+    // contract, and without it automation silently behaves as if every control were untouched.
+    trimKnob.onDragStarted = [this]() { hiddenTrimSlider.startedDragging(); };
+    trimKnob.onDragEnded   = [this]() { hiddenTrimSlider.stoppedDragging(); };
+    hpfKnob.onDragStarted = [this]() { hiddenHpfSlider.startedDragging(); };
+    hpfKnob.onDragEnded   = [this]() { hiddenHpfSlider.stoppedDragging(); };
+    lpfKnob.onDragStarted = [this]() { hiddenLpfSlider.startedDragging(); };
+    lpfKnob.onDragEnded   = [this]() { hiddenLpfSlider.stoppedDragging(); };
 }
 
 void InputSidebarUI::setupSlopeCell(ui::InvisCellSelector& cell, juce::ComboBox& box)

@@ -205,6 +205,25 @@ private:
     dsp::InvisConstellationEngine& engine;
     juce::AudioProcessorValueTreeState& apvtsRef;
 
+    /**
+     * The observer, both ways.
+     *
+     * Hidden sliders because that is how a JUCE attachment reaches a control that is not a
+     * juce::Slider - and the attachment is what makes the host see a gesture when you drag the
+     * reticle, which is the whole point of promoting it to a parameter.
+     *
+     * Y is stored NORMALISED to the chart's height, not in chart units: the field's aspect changes
+     * with the window, and a parameter whose meaning moved with the layout would recall a
+     * different position than it recorded.
+     */
+    juce::Slider observerSliders[2][2];
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 4>
+        observerAttachments;
+
+    bool syncingObserver { false };
+    void pushObserverToParams(int index);
+    void pullObserverFromParams();
+
     // Restoring writes to the chart, which reports a change, which would write straight back over
     // the state being restored. One flag, because the loop is one call deep.
     bool restoringChart { false };
