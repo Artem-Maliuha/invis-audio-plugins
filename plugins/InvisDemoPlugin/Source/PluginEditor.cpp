@@ -161,10 +161,7 @@ void InvisDemoPluginEditor::StarPanel::resized()
 // ==============================================================================================
 
 InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
-    : AudioProcessorEditor(&p), processorRef(p),
-      topSidebarUI(p.apvts, "top_", "os_"),
-      inputSidebarUI(p.apvts, "in_side_"),
-      outputSidebarUI(p.apvts, "out_side_")
+    : AudioProcessorEditor(&p), processorRef(p), chassis(p.chassis, p.apvts)
 {
     // Mandatory Requirement 1: Resizable UI, fixed aspect, pure global zoom.
     // Everything below is laid out inside `canvas` in design pixels; `resized()` only scales it.
@@ -172,16 +169,18 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     // atom's intrinsic size, so it must not run before the atoms have been given their presets.
     addAndMakeVisible(canvas);
 
-    // THE CHASSIS FRAME. The left and right sidebars were laid out but never added as children,
-    // so the whole channel strip was being positioned into thin air and never drawn.
-    canvas.addAndMakeVisible(topSidebarUI);
-    canvas.addAndMakeVisible(inputSidebarUI);
-    canvas.addAndMakeVisible(outputSidebarUI);
+    // THE FRAME, ASSEMBLED AND LIVE. It adds its own sidebars, wires every callback back to the
+    // audio side and runs its own clock; the bench hands it one component and is done.
+    canvas.addAndMakeVisible(chassis);
+    chassis.setWorkspace(workspace);
+
+    // The bench's own instrument still needs advancing, on the same clock as the frame.
+    chassis.onTick = [this](float dt) { constellation.tickAnimation(dt); };
 
     // A catalogue with real depth, so the tree is exercised rather than assumed. Storage is not
     // implemented - selecting a preset only reports the path.
     using invis::modules::PresetNode;
-    topSidebarUI.setPresetTree(PresetNode::folder("", {
+    chassis.getTop().setPresetTree(PresetNode::folder("", {
         PresetNode::preset("Init"),
         PresetNode::folder("Zodiac", {
             PresetNode::preset("Aries"),
@@ -220,7 +219,7 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
         // exist these become parallel send levels, one set per channel stream.
         juce::ignoreUnused(observerIndex, w);
     };
-    canvas.addAndMakeVisible(constellation);
+    workspace.addAndMakeVisible(constellation);
 
     addNodeButton.setButtonSize(invis::ui::InvisButtonSize::S);
     addNodeButton.setLabel("+ ADD");
@@ -231,17 +230,17 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
         if (constellation.addNode(kEffectCatalogue[slot].name, kEffectCatalogue[slot].colour) >= 0)
             ++nextEffectSlot;
     };
-    canvas.addAndMakeVisible(addNodeButton);
+    workspace.addAndMakeVisible(addNodeButton);
 
     randomiseButton.setButtonSize(invis::ui::InvisButtonSize::S);
     randomiseButton.setLabel("RANDOM");
     randomiseButton.setLedVisible(false);
     randomiseButton.setToggleMode(false);
     randomiseButton.onClick = [this]() { constellation.randomise(); };
-    canvas.addAndMakeVisible(randomiseButton);
+    workspace.addAndMakeVisible(randomiseButton);
 
     constellation.onNodeClicked = [this](int index) { starPanel.showFor(index); };
-    canvas.addAndMakeVisible(starPanel);
+    workspace.addAndMakeVisible(starPanel);
     starPanel.showFor(-1);   // prepared and empty until a star is picked
 
     // Randomising rebuilds the chart, so whatever the inspector was holding is gone with it.
@@ -256,45 +255,14 @@ InvisDemoPluginEditor::InvisDemoPluginEditor(InvisDemoPluginProcessor& p)
     channelModeCell.onIndexChanged = [this](int index, const juce::String&) {
         constellation.setChannelMode(static_cast<invis::ui::ConstellationChannelMode>(index));
     };
-    canvas.addAndMakeVisible(channelModeCell);
+    workspace.addAndMakeVisible(channelModeCell);
 
     // LAST: every child now exists and carries its final size preset, so the first layout pass
     // can read correct intrinsic sizes.
-    invis::ui::applyDesignResizeLimits(*this, kDesignWidth, kDesignHeight);
+    invis::ui::applyDesignResizeLimits(*this, designSize.x, designSize.y);
 }
 
-InvisDemoPluginEditor::~InvisDemoPluginEditor()
-{
-    stopTimer();
-}
-
-void InvisDemoPluginEditor::timerCallback()
-{
-    auto& inDsp = processorRef.inputSidebarDSP;
-    auto& outDsp = processorRef.outputSidebarDSP;
-
-    inputSidebarUI.updateLevels(inDsp.getPeakLevelL(), inDsp.getPeakLevelR());
-    inputSidebarUI.setReadouts(inDsp.getRmsDb(), inDsp.getPeakDb(), inDsp.getLufsDb());
-
-    outputSidebarUI.updateLevels(outDsp.getPeakLevelL(), outDsp.getPeakLevelR());
-    outputSidebarUI.setReadouts(outDsp.getRmsDb(), outDsp.getPeakDb(), outDsp.getLufsDb());
-
-    // Filter "energy removed" lamps beside the HPF / LPF labels
-    inputSidebarUI.updateFilterLamps(inDsp.getHpfEnergyRemoved(), inDsp.isHpfEngaged(),
-                                     inDsp.getLpfEnergyRemoved(), inDsp.isLpfEngaged());
-
-    // Gain-stage target is a global (top sidebar) concern that both AUTO routines consume, and
-    // that both meters draw as a reference marker.
-    const float gainStageDb = topSidebarUI.getGainStageTargetDb();
-    inputSidebarUI.setGainStageTargetDb(gainStageDb);
-    outputSidebarUI.setGainStageTargetDb(gainStageDb);
-
-    const float dt = 1.0f / 60.0f;
-    inputSidebarUI.tickAnimations(dt);
-    constellation.tickAnimation(dt);
-    outputSidebarUI.tickAnimations(dt);
-    topSidebarUI.tickAnimations(dt);
-}
+InvisDemoPluginEditor::~InvisDemoPluginEditor() = default;
 
 void InvisDemoPluginEditor::paint(juce::Graphics& g)
 {
@@ -374,34 +342,24 @@ void InvisDemoPluginEditor::paintCanvas(juce::Graphics& g)
 void InvisDemoPluginEditor::resized()
 {
     // The ONLY responsive maths in the whole editor: one zoom factor for the whole tree.
-    invis::ui::applyDesignZoom(canvas, kDesignWidth, kDesignHeight, getLocalBounds());
+    invis::ui::applyDesignZoom(canvas, designSize.x, designSize.y, getLocalBounds());
 }
 
 void InvisDemoPluginEditor::layoutCanvas()
 {
+    // The frame owns the frame. Where the sidebars go, how wide they are and what is left over is
+    // the chassis's arithmetic, and duplicating it here is how the two drift apart.
+    chassis.setBounds(canvas.getLocalBounds());
+}
+
+void InvisDemoPluginEditor::layoutWorkspace()
+{
     using namespace invis::ui;
-    using namespace invis::modules;
 
-    auto area = canvas.getLocalBounds().reduced(kOuterMargin);
+    auto area = workspace.getLocalBounds();
 
-    // 1. TOP SIDEBAR spans the FULL width above the channel strips. Everything it carries is
-    //    plugin-global rather than signal-path, so it outranks the left/right sidebars.
-    topSidebarUI.setBounds(area.removeFromTop(TopSidebarUI::getIntrinsicHeight()));
-    area.removeFromTop(layout::kGapM);
-
-    // 2. STANDARD CHASSIS FRAME: full-height sidebars at their fixed intrinsic width.
-    const int sidebarWidth = InputSidebarUI::getIntrinsicWidth();
-
-    inputSidebarUI.setBounds(area.removeFromLeft(sidebarWidth));
-    outputSidebarUI.setBounds(area.removeFromRight(sidebarWidth));
-    area.removeFromLeft(layout::kGapM);
-    area.removeFromRight(layout::kGapM);
-
-    jassert(area.getHeight() >= InputSidebarUI::getMinimumHeight());
-
-    // 3. WORKSPACE: the inspector takes a fixed column on the right, OUTSIDE the star field, and
-    //    the chart centres itself in what is left. A panel that overlapped the chart put the
-    //    editing controls on top of the thing being edited.
+    // The inspector takes a fixed column on the right, OUTSIDE the star field. A panel that
+    // overlapped the chart put the editing controls on top of the thing being edited.
     auto inspectorColumn = area.removeFromRight(kStarPanelWidth);
     area.removeFromRight(layout::kGapGroup);
 

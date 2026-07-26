@@ -11,18 +11,15 @@ enum class PanelTheme {
     GunmetalSteel      // Technical dark gunmetal steel
 };
 
-class InvisDemoPluginEditor : public juce::AudioProcessorEditor, private juce::Timer {
+class InvisDemoPluginEditor : public juce::AudioProcessorEditor {
 public:
     // FIXED DESIGN RESOLUTION. The entire editor is authored once at this size in design pixels;
     // resizing is a pure zoom applied to a single root canvas. No percentage layout anywhere.
-    // STRIPPED TO THE FRAME. The bench carries the universal chassis - top, input and output
-    // sidebars - and the one thing under construction. Demo knobs, the filter panel and the
-    // theme/colour button rows are gone: they were exercising atoms that have since grown their
-    // own homes, and they were the only reason this canvas had to be so large.
-    static constexpr int kDesignWidth  = 1100;
-    static constexpr int kDesignHeight = 740;
-
-    static constexpr int kOuterMargin  = 12;
+    // The bench declares the size of ITS OWN INSTRUMENT and nothing else. The panel around it is
+    // the chassis's business, so a frame that grows a row does not send every plugin hunting for
+    // its own dimensions again.
+    static constexpr int kWorkspaceWidth  = 736;
+    static constexpr int kWorkspaceHeight = 560;
 
     explicit InvisDemoPluginEditor(InvisDemoPluginProcessor& p);
     ~InvisDemoPluginEditor() override;
@@ -31,8 +28,6 @@ public:
     void resized() override;
 
 private:
-    void timerCallback() override;
-
     /** Root design-pixel canvas. Holds every child; the editor only zooms it. */
     struct Canvas : juce::Component {
         explicit Canvas(InvisDemoPluginEditor& o) : owner(o) { setInterceptsMouseClicks(false, true); }
@@ -48,10 +43,22 @@ private:
 
     InvisDemoPluginProcessor& processorRef;
 
-    // The universal chassis frame
-    invis::modules::TopSidebarUI topSidebarUI;
-    invis::modules::InputSidebarUI inputSidebarUI;
-    invis::modules::OutputSidebarUI outputSidebarUI;
+    /** Everything BETWEEN the ends - the only part of this editor that is the bench's own. */
+    struct Workspace : juce::Component {
+        explicit Workspace(InvisDemoPluginEditor& o) : owner(o) {}
+        void resized() override { owner.layoutWorkspace(); }
+        InvisDemoPluginEditor& owner;
+    };
+
+    void layoutWorkspace();
+
+    // The frame arrives assembled and already wired to the audio side.
+    invis::modules::InvisChassisUI chassis;
+    Workspace workspace { *this };
+
+    const juce::Point<int> designSize {
+        invis::modules::InvisChassisUI::getDesignSize({ kWorkspaceWidth, kWorkspaceHeight })
+    };
 
     invis::ui::InvisConstellation constellation;
     invis::ui::InvisButton addNodeButton;

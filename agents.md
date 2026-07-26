@@ -126,6 +126,14 @@ Every plugin developed in this repository MUST implement the following 4 feature
 - **Ambient Light Propagation**: Emissive elements MUST project soft light fields onto adjacent materials (e.g. metal cap lathe grooves, surrounding faceplate).
 - **Realistic Optical Layering**: Shadow/bevel housing $\rightarrow$ Surface glow reflection $\rightarrow$ Translucent body $\rightarrow$ Neon halo $\rightarrow$ High-intensity phosphor core.
 
+### 5a. The Chassis (`InvisChassisDSP` / `InvisChassisUI`) — MANDATORY
+- **Input at the front, output at the back, and the same wiring between them every single time.** Only what sits BETWEEN them is a particular plugin. A plugin MUST NOT reassemble the ends by hand.
+- `InvisChassisDSP::addParameters(layout)` adds every frame parameter under FIXED prefixes (`in_side_`, `out_side_`, `top_`, `os_`). Prefixes are not arguments — a prefix that varies per plugin is one that gets mistyped, and the failure is silent.
+- `InvisChassisDSP::process(buffer, apvts, nonRealtime, plugin)` is the only way to run a block. Stage order, master bypass and metering-while-bypassed are its contract; the plugin hands in its algorithm and **cannot express the wrong order**.
+- `InvisChassisUI` owns the three sidebars, adds them as children, wires every callback to the DSP, and **runs its own 60 Hz timer**. A plugin gives it one workspace component (`setWorkspace`) and is done. Never pump the sidebars from a plugin timer.
+- `InvisChassisUI::getDesignSize(workspace)` computes the editor size. A plugin declares only the size of its own instrument.
+- **Why this is a rule and not a convenience**: the bench proved the failure mode. Meters metered nothing, RMS/PEAK readouts did nothing when clicked, AUTO could not reset the analyser its own verify phase depends on, and the sidebars were laid out but never added as children. Nothing was broken — it was simply never connected, because connecting it was somebody's job to remember. If you find yourself writing sidebar wiring in a plugin, the chassis is missing a feature; add it there.
+
 ### 5b. Constellation Routing Law (`InvisConstellation`)
 - The chart is the flagship element of the series. **The shape you draw IS the signal path** — topology is DERIVED from the drawn links, never stored as a mode or a toggle.
 - **THE LAW, and it composes**: *anything serial is serial; anything closed behaves as ONE node with everything parallel inside*. These are not alternatives for a whole component. A component is cut at its **bridges**; each surviving cycle collapses to one parallel cluster; the bridges are the serial hops between clusters. Contracting cycles always leaves a tree, so any drawing is an ordered run of stages.

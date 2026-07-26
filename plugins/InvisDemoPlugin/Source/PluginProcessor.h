@@ -35,17 +35,16 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
     invis::modules::MidiLearnModule midiLearn;
-    invis::modules::InputSidebarDSP inputSidebarDSP;
-    invis::modules::OutputSidebarDSP outputSidebarDSP;
 
-    std::atomic<float> outputMeterL { 0.0f };
-    std::atomic<float> outputMeterR { 0.0f };
+    // THE CHASSIS. Input at the front, output at the back, oversampling and bypass between them -
+    // identical in every plugin of the series, so it is owned rather than reassembled.
+    invis::modules::InvisChassisDSP chassis;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // What this particular plugin IS. Everything else on this processor is frame.
     invis::modules::InputFilterDSP inputFilterDSP;
-    invis::modules::OversamplingDSP oversamplingDSP;
 
     double currentSampleRate { 44100.0 };
     double sinePhase { 0.0 };

@@ -648,13 +648,11 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
 
         const float entrySens = nodes[static_cast<size_t>(entryStar)].sensitivity;
 
-        if (std::abs(arrival * entrySens) <= 0.0005f)
-        {
-            for (int idx : fig.stars)
-                if (idx >= 0 && idx < static_cast<int>(nodes.size()))
-                    out[static_cast<size_t>(idx)] = {};   // silent, and on no path at all
-            continue;
-        }
+        // SILENT IS NOT SHAPELESS. A figure the observer has walked away from used to be wiped
+        // outright, chain order and all - so the chart forgot how it was wired the moment it went
+        // quiet, and the routing animation had nothing left to draw. Level and structure are
+        // different facts: the levels go to zero, the stages stay.
+        const bool silent = std::abs(arrival * entrySens) <= 0.0005f;
 
         // Walk the CLUSTER TREE breadth-first from the entry. Contracting the cycles guarantees
         // this is a tree, so a figure of any shape - branches, loops, loops with branches - comes
@@ -709,7 +707,8 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     auto& c = out[static_cast<size_t>(idx)];
                     c.chainOrder = order;
                     c.isEntry = marksEntry && isEntry;
-                    c.amount = feed * share * nodes[static_cast<size_t>(idx)].sensitivity;
+                    c.amount = silent ? 0.0f
+                                      : feed * share * nodes[static_cast<size_t>(idx)].sensitivity;
 
                     // GLOW IS NOT THE SHARE. The share is normalised across the members, so a
                     // four-star cycle gives each one a quarter - and walking INTO the figure made
@@ -717,7 +716,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     // eye is being told is how strongly the stage is FED, so glow follows the
                     // arrival; the share only decides which member leads.
                     const float lead = juce::jlimit(0.0f, 1.0f, share * count);
-                    c.glow = feed * (0.55f + 0.45f * lead);
+                    c.glow = silent ? 0.0f : feed * (0.55f + 0.45f * lead);
                 }
             }
             else
@@ -729,7 +728,7 @@ std::vector<StarContribution> InvisConstellation::evaluate(const std::vector<Con
                     auto& c = out[static_cast<size_t>(idx)];
                     c.chainOrder = order;
                     c.isEntry = marksEntry && isEntry;
-                    c.amount = feed * nodes[static_cast<size_t>(idx)].sensitivity;
+                    c.amount = silent ? 0.0f : feed * nodes[static_cast<size_t>(idx)].sensitivity;
                     c.glow = std::abs(c.amount);
                 }
             }
@@ -1031,13 +1030,10 @@ void InvisConstellation::insertNodeOnLink(int linkIndex, juce::Point<float> norm
 
 void InvisConstellation::tickAnimation(float dt)
 {
-    bool anyFlow = false;
-    for (int p = 0; p < getNumObservers() && !anyFlow; ++p)
-        for (const auto& c : getContributions(p))
-            if (std::abs(c.amount) > 0.06f) { anyFlow = true; break; }
-
-    if (!anyFlow) return;
-
+    // THE CHART IS ALWAYS RUNNING. This used to stop the clock whenever nothing was loud enough,
+    // which meant the one thing the animation exists to show - how the chains you built are wired,
+    // and which way they run - was only visible while you happened to be standing close to them.
+    // What a chain DOES is true whether or not you are listening to it.
     flowPhase += dt;
     if (flowPhase > 1000.0f) flowPhase -= 1000.0f;
 
@@ -1854,7 +1850,7 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
                     break;
                 }
 
-            const float beat = (activity > 0.004f) ? stageFlash(stages, order) : 0.0f;
+            const float beat = stageFlash(stages, order);
 
             const float soft = (hovered ? 0.16f : 0.09f) + 0.10f * activity + 0.16f * beat;
             const float core = (hovered ? 0.62f : 0.34f) + 0.26f * activity + 0.40f * beat;
@@ -1879,7 +1875,10 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
         {
             const int downstream = (ca.chainOrder > cb.chainOrder) ? l.a : l.b;
             const auto colour = nodes[static_cast<size_t>(downstream)].colour;
-            const float energy = std::min(1.0f, std::abs(contribs[static_cast<size_t>(downstream)].amount) + 0.25f);
+            // The floor is what a chain looks like with nobody listening to it: dimmer, still
+            // legible, still moving. Below about a third the spark stops reading as travel.
+            const float energy = std::min(1.0f,
+                std::abs(contribs[static_cast<size_t>(downstream)].amount) + 0.38f);
 
             g.setColour(colour.withAlpha(0.16f * energy));
             g.drawLine(pa.x, pa.y, pb.x, pb.y, m.polygonStroke * 6.0f);
@@ -1895,6 +1894,8 @@ void InvisConstellation::paintPolygon(juce::Graphics& g, const ChartFrame& frame
             const int stages = frame.stages[static_cast<size_t>(downstream)];
             const int order = contribs[static_cast<size_t>(downstream)].chainOrder;
 
+            // Scaled by how audible the hop is, but never off: a quiet chain still has to say
+            // which way it runs. `energy` already carries a floor for exactly this reason.
             if (const float t = pulseOnSegment(stages, order); t >= 0.0f)
                 drawSpark(g, from + (to - from) * t, colour, 2.6f, energy);
         }
@@ -2081,9 +2082,7 @@ void InvisConstellation::paintNode(juce::Graphics& g, int index, const ChartFram
     // ARRIVAL. The star rings when the charge lands on it - sequentially down a chain, all at once
     // inside a closed cluster, because a cluster is one stage and its members share an order.
     const auto& own = frame.heard[0][static_cast<size_t>(index)];
-    const float beat = (own.glow > 0.004f)
-                     ? stageFlash(frame.stages[static_cast<size_t>(index)], own.chainOrder)
-                     : 0.0f;
+    const float beat = stageFlash(frame.stages[static_cast<size_t>(index)], own.chainOrder);
 
     // Negative polarity stays unlit here too, so a star reads the same way as its aura does.
     const float lit = (node.sensitivity < 0.0f) ? 0.0f : peak;

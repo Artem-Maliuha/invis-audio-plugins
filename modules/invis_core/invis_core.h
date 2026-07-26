@@ -51,5 +51,9 @@
 #include "functional_modules/output_sidebar/OutputSidebarUI.h"
 #include "functional_modules/top_sidebar/TopSidebarDSP.h"
 #include "functional_modules/top_sidebar/TopSidebarUI.h"
+
+// The chassis: the frame every plugin wears, wired. Include LAST - it composes the sidebars above.
+#include "chassis/InvisChassisDSP.h"
+#include "chassis/InvisChassisUI.h"
 #include "functional_modules/oversampling/OversamplingDSP.h"
 #include "functional_modules/midi_learn/MidiLearnModule.h"
